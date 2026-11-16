@@ -1,0 +1,8 @@
+[tools]
+java = "temurin-21"
+gradle = "9"
+node = "26"
+python = "3.14"
+ripgrep = "latest"
+pandoc = "latest"
+"npm:@asciidoctor/cli" = "latest"

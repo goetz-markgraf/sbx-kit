@@ -1,0 +1,91 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+displayName: OpenAI-compatible LLM provider for opencode
+description: Proxy-managed credential, egress to one endpoint and an opencode plugin that lists its models.
+
+kind: mixin
+version: "1.0.0"
+
+args:
+  id:
+    default: requesty
+    pattern: '^[a-z0-9-]+$'
+    description: Provider ID in opencode and service name of the sbx secret
+  name:
+    default: Requesty
+    description: Display name in opencode
+  host:
+    default: router.eu.requesty.ai
+    pattern: '^[a-z0-9.-]+$'
+    description: API host, the only destination the credential is injected into
+  basePath:
+    default: /v1
+    pattern: '^/[A-Za-z0-9/_-]*$'
+    description: Path of the OpenAI-compatible API on the host
+  envName:
+    default: LLM_API_KEY
+    pattern: '^[A-Z_][A-Z0-9_]*$'
+    description: Placeholder variable inside the sandbox
+
+capabilities:
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          - ${{ kit.args.host }}:443
+
+  - type: com.docker.sandbox/credential@1
+    config:
+      service: ${{ kit.args.id }}
+      phase: runtime
+      apiKey:
+        name: ${{ kit.args.envName }}
+        proxyManaged: true
+        inject:
+          - domain: ${{ kit.args.host }}
+            header: Authorization
+            format: "Bearer %s"
+
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      files:
+        - path: /home/agent/.config/opencode/plugins/${{ kit.args.id }}.ts
+          mode: "0644"
+          description: opencode plugin that registers the provider with its current model list
+          content: |
+            import { Model, Plugin, Provider } from "@opencode/plugin"
+
+            const id = "${{ kit.args.id }}"
+            const baseURL = "https://${{ kit.args.host }}${{ kit.args.basePath }}"
+            // Only a placeholder; the sbx proxy replaces it with the real key.
+            const apiKey = process.env["${{ kit.args.envName }}"] ?? "proxy-managed"
+
+            export default Plugin.define({
+              id: `provider.${id}`,
+              async setup(ctx) {
+                const response = await fetch(`${baseURL}/models`, {
+                  headers: { Authorization: `Bearer ${apiKey}` },
+                })
+                if (!response.ok) {
+                  console.error(`${id}: model list failed with HTTP ${response.status}`)
+                  return
+                }
+                const body = (await response.json()) as { data: { id: string }[] }
+
+                const providerID = Provider.ID.make(id)
+                const models = body.data.map((m) => Model.Info.default(providerID, Model.ID.make(m.id)))
+
+                await ctx.provider.transform((editor) => {
+                  editor.add({
+                    info: {
+                      ...Provider.Info.empty(providerID),
+                      name: "${{ kit.args.name }}",
+                      activation: "enabled",
+                      package: "@opencode/ai/providers/openai-compatible",
+                      settings: { baseURL, apiKey },
+                    },
+                    models,
+                  })
+                })
+              },
+            })

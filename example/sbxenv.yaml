@@ -1,0 +1,35 @@
+schemaVersion: "1"
+name: requesty-test
+agent: shell
+workspace: ./projekt
+
+# Login shell so /etc/profile.d puts the mise tools on PATH for opencode.
+# `sbx env run -- bash` opens a shell instead.
+entrypoint: [/bin/bash, -lc]
+cmd: ["exec opencode"]
+
+kits:
+  - docker.io/sbx/shell:latest
+  - docker.io/sbx/opencode-mixin:latest
+  - docker.io/sbx/mise-mixin:latest
+  - ./kits/project-tools
+  - source: ./kits/llm-provider
+    args:
+      id: requesty
+      name: Requesty
+      host: router.eu.requesty.ai
+      basePath: /v1
+      envName: REQUESTY_API_KEY
+
+secrets:
+  requesty:
+    ref: op://Employee/RequestyApiKey/password
+
+bindings:
+  requesty:
+    apiKey:
+      domains: [router.eu.requesty.ai]
+
+additionalWorkspaces:
+  - path: ./opencode-history
+    target: /home/agent/.local/share/opencode
