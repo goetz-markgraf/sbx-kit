@@ -1,16 +1,28 @@
 # syntax=docker/sandbox-kit:3
 schemaVersion: "3"
 displayName: Project tools via mise
-description: Installs the tools from the workspace's mise.toml once at create, plus egress to their documentation.
+description: Installs the tools from the workspace's mise.sandbox.toml once at create, plus egress to their documentation.
 
 kind: mixin
 version: "1.0.0"
 # Ensures mise-mixin's hooks run before this kit's install hook.
 requires: ["mise"]
 
+args:
+  configFile:
+    default: mise.sandbox.toml
+    pattern: '^[A-Za-z0-9._-]+$'
+    description: mise config file in the workspace root; mise reads only this file
+    # Also exported to the container so the agent's shell uses the same file.
+    env: MISE_OVERRIDE_CONFIG_FILENAMES
+
 capabilities:
   - type: com.docker.sandbox/network-policy@1
     config:
+      # Adjust per project: add the download hosts of the tools in mise.sandbox.toml.
+      # `sbx policy log` shows blocked hosts.
+      # Examples: crates.io, static.crates.io, static.rust-lang.org (rust),
+      #           repo.maven.apache.org (maven), pypi.org, files.pythonhosted.org (python).
       # Open only while install hooks run, closed before the agent starts.
       install:
         allow:
@@ -43,7 +55,16 @@ capabilities:
           user: "0"
           env: [HTTP_PROXY, HTTPS_PROXY, NO_PROXY, http_proxy, https_proxy, no_proxy]
           description: Install shared libraries the mise tools need
-        - command: cd "$WORKSPACE_DIR" && MISE_TRUSTED_CONFIG_PATHS=/ MISE_USE_VERSIONS_HOST=false /usr/local/bin/mise install --yes
+        - command: |
+            cd "$WORKSPACE_DIR"
+            if [ ! -f "${{ kit.args.configFile }}" ]; then
+              echo "no ${{ kit.args.configFile }} in $WORKSPACE_DIR, skipping mise install"
+              exit 0
+            fi
+            export MISE_OVERRIDE_CONFIG_FILENAMES="${{ kit.args.configFile }}"
+            export MISE_USE_VERSIONS_HOST=false
+            /usr/local/bin/mise trust "$WORKSPACE_DIR/${{ kit.args.configFile }}"
+            /usr/local/bin/mise install --yes
           user: "1000"
           env: [WORKSPACE_DIR, HTTP_PROXY, HTTPS_PROXY, NO_PROXY]
-          description: Install the tools listed in the workspace's mise.toml
+          description: Trust and install the tools listed in the workspace's mise config

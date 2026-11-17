@@ -1,18 +1,31 @@
 schemaVersion: "1"
 name: requesty-test
 agent: shell
-workspace: ./projekt
+
+# The directory containing this file is the workspace. sbx mounts this file
+# read-only because it sits in the workspace root.
+workspace: .
 
 # Login shell so /etc/profile.d puts the mise tools on PATH for opencode.
-# `sbx env run -- bash` opens a shell instead.
+# `./sbx-env.sh run -- bash` opens a shell instead.
 entrypoint: [/bin/bash, -lc]
 cmd: ["exec opencode"]
+
+# Set by sbx-env.sh. sbx does not expand $HOME or ~ in this file.
+args:
+  historyDir:
+    required: true
+    description: Absolute host path for the opencode history of this sandbox
+  hostConfigDir:
+    required: true
+    description: Absolute host path of the staged opencode config (allowlisted files only)
 
 kits:
   - docker.io/sbx/shell:latest
   - docker.io/sbx/opencode-mixin:latest
   - docker.io/sbx/mise-mixin:latest
   - ./kits/project-tools
+  - ./kits/opencode-config
   - source: ./kits/llm-provider
     args:
       id: requesty
@@ -30,6 +43,12 @@ bindings:
     apiKey:
       domains: [router.eu.requesty.ai]
 
+# One history directory per sandbox: opencode runs its own server with its own
+# SQLite database, so sandboxes must not share one.
 additionalWorkspaces:
-  - path: ./opencode-history
+  - path: ${{ env.args.historyDir }}
     target: /home/agent/.local/share/opencode
+  # Read-only. The target must match kits/opencode-config.
+  - path: ${{ env.args.hostConfigDir }}
+    target: /home/agent/.host-config/opencode
+    readOnly: true
