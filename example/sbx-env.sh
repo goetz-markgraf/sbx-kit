@@ -9,8 +9,20 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-name=$(sed -n 's/^name: *//p' sbxenv.yaml | head -n 1)
+# Sandbox name: `name:` from sbxenv.yaml (quotes and trailing comment removed),
+# overridden by --name <x> or --name=<x> (before any `--`).
+name=$(sed -E -n "s/^name:[[:space:]]*(\"([^\"]*)\"|'([^']*)'|([^[:space:]#]*)).*/\2\3\4/p" sbxenv.yaml | head -n 1)
+prev=""
+for arg in "$@"; do
+  [ "$arg" = "--" ] && break
+  [ "$prev" = "--name" ] && name="$arg"
+  case "$arg" in --name=*) name="${arg#--name=}" ;; esac
+  prev="$arg"
+done
 [ -n "$name" ] || { echo "no name: in sbxenv.yaml" >&2; exit 1; }
+# The name becomes a directory name and is used with rm -rf: no path tricks.
+[[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$name" != *..* ]] \
+  || { echo "invalid sandbox name '$name' (allowed: letters, digits, . _ -)" >&2; exit 1; }
 
 root="${SBX_HISTORY_ROOT:-$HOME/.sbx-history}"
 history_dir="$root/$name"
