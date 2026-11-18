@@ -26,6 +26,10 @@ args:
     default: LLM_API_KEY
     pattern: '^[A-Z_][A-Z0-9_]*$'
     description: Placeholder variable inside the sandbox
+  defaultModel:
+    default: ""
+    pattern: '^[A-Za-z0-9._/@:-]*$'
+    description: Optional model ID (without provider prefix) to preselect; empty selects the first model the API lists
 
 capabilities:
   - type: com.docker.sandbox/network-policy@1
@@ -48,6 +52,27 @@ capabilities:
 
   - type: com.docker.sandbox/lifecycle@1
     config:
+      startup:
+        # Runs on every boot but only acts while opencode.json has no `model`,
+        # so a model chosen later is not overridden. Needs the runtime egress to
+        # the API host; the proxy injects the real key into the request.
+        - command: |
+            cfg="$HOME/.config/opencode/opencode.json"
+            mkdir -p "$(dirname "$cfg")"
+            [ -f "$cfg" ] || echo '{}' > "$cfg"
+            if jq -e '.model' "$cfg" >/dev/null 2>&1; then exit 0; fi
+            model="${{ kit.args.defaultModel }}"
+            if [ -z "$model" ]; then
+              model=$(curl -fsS -m 20 -H "Authorization: Bearer proxy-managed" \
+                "https://${{ kit.args.host }}${{ kit.args.basePath }}/models" | jq -r '.data[0].id // empty') || true
+            fi
+            if [ -z "$model" ]; then
+              echo "llm-provider: no default model found, leaving opencode.json unchanged"
+              exit 0
+            fi
+            jq --arg m "${{ kit.args.id }}/$model" '.model = $m' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
+          env: [HTTP_PROXY, HTTPS_PROXY, NO_PROXY, http_proxy, https_proxy, no_proxy]
+          description: Preselect a default model in opencode.json if none is set
       files:
         - path: /home/agent/.config/opencode/plugins/${{ kit.args.id }}.ts
           mode: "0644"

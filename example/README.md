@@ -55,7 +55,7 @@ Das Verzeichnis kopieren und in die Projektwurzel legen. Dann anpassen:
 - **Name:** `name` in `sbxenv.yaml`. Er bestimmt Sandbox und Historie-Ordner.
 - **Umgebungsvariablen:** `env:` in `sbxenv.yaml`, z. B. `EDITOR: vim`. Änderungen gelten ab dem nächsten `run`, ohne die Sandbox neu zu erstellen.
 - **Dev-Tools:** `mise.sandbox.toml` bearbeiten. Für neue Download-Hosts `install.allow` in `kits/project-tools/project-tools.yaml` ergänzen. Fehlen einem Tool Systembibliotheken (z. B. `libatomic1` für Node), das apt-Paket im ersten Install-Hook ergänzen.
-- **Provider:** In `sbxenv.yaml` die `args` des `llm-provider`-Kits setzen. Dazu `secrets` und `bindings` mit demselben `id` und `host` anlegen.
+- **Provider:** In `sbxenv.yaml` die `args` des `llm-provider`-Kits setzen. Dazu `secrets` und `bindings` mit demselben `id` und `host` anlegen. `defaultModel` ist optional. Ohne Angabe trägt ein Startup-Hook das erste Modell der `/v1/models`-Liste als `model` in `~/.config/opencode/opencode.json` ein, aber nur solange dort noch keins steht. Mit `defaultModel` (ID ohne Provider-Präfix) wählst du ein bestimmtes.
 
 Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mise.sandbox.toml` zählt.
 
@@ -95,6 +95,7 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
 
 ## Ungeprüft
 
+- Das Startmodell: Ob der Startup-Hook von `llm-provider` die Modellliste abruft (Netz im Hook, Proxy-Umgebung, Zertifikat) und `model` in `opencode.json` einträgt. Schlägt der Abruf fehl, meldet der Hook das und lässt die Datei unverändert.
 - Der Startup-Hook von `kits/opencode-config` läuft vor dem Start von opencode. Die Dateien liegen nach dem Start dort. Ob die TUI beim ersten Start schon Theme und Shortcuts nutzt, ist nicht bestätigt.
 - Der Hook überschreibt `cli.json` und die anderen kopierten Einträge bei jedem Start. Der Host ist die Quelle, Einstellungen ändert man dort. Die Sandbox-Datei enthält `session.sidebar: hide`, die Host-Fassung, die ich gesehen habe, nicht. Vermutlich hat die TUI das in der Sandbox geschrieben. Solche Einstellungen gehen beim nächsten Start verloren.
 - Ob die Download-Hosts in `project-tools` für alle Tools reichen. Bei Fehlern zeigt `sbx policy log` die gesperrten Hosts.
