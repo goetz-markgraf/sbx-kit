@@ -1,7 +1,7 @@
 # syntax=docker/sandbox-kit:3
 schemaVersion: "3"
 displayName: opencode host config
-description: Copies the allowlisted opencode config (keybinds, theme, AGENTS.md, skills, ...) from the read-only host mount into ~/.config/opencode on every start.
+description: Copies the allowlisted opencode config (cli.json with keybinds and theme, themes/) from the read-only host mount into ~/.config/opencode on every start.
 
 kind: mixin
 version: "1.0.0"
@@ -22,7 +22,7 @@ capabilities:
               exit 0
             fi
             mkdir -p "$dst"
-            for name in AGENTS.md cli.json agents commands skills themes; do
+            for name in cli.json themes; do
               [ -e "$src/$name" ] || continue
               chmod -R u+w "$dst/$name" 2>/dev/null || true
               rm -rf "$dst/$name"

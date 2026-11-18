@@ -63,7 +63,7 @@ Hauptprobleme:
 | S-3 | `git diff` als Prüfmittel ist selbst angreifbar | Mittel |
 | S-4 | Credential kann im ganzen API-Host genutzt werden | Mittel |
 | S-5 | Deny-all fragt nach, statt hart zu sperren | Mittel |
-| S-6 | Host-`AGENTS.md`/Skills landen ungeprüft in der Sandbox | Mittel |
+| S-6 | Host-`AGENTS.md`/Skills landen ungeprüft in der Sandbox | Mittel, **weitgehend erledigt** |
 | S-7 | `:latest`-Kits ohne Pinning oder Signatur | Mittel |
 | S-8 | Historienverzeichnis mit Standardrechten | Niedrig, **erledigt** |
 | S-9 | Workspace enthält `.git` (Hooks) | Mittel |
@@ -329,7 +329,9 @@ Empfehlungen:
 
 Nach den Docs wird bei `balanced` und `deny-all` ein Request ohne passende Regel „blocked and asks for your approval“, nicht hart abgelehnt. Die README sagt „Standard ist alles gesperrt“. Wer Rückfragen schnell bestätigt, öffnet das Netz Stück für Stück. Harte Sperren gehen nur über Deny-Regeln. Die Vorbedingung `sbx policy init deny-all` ist außerdem global und wird nicht geprüft. Mindestens sollte die README das genau beschreiben und raten, Rückfragen nie reflexartig zu bestätigen.
 
-### S-6 Host-`AGENTS.md`/Skills landen ungeprüft in der Sandbox (Mittel)
+### S-6 Host-`AGENTS.md`/Skills landen ungeprüft in der Sandbox (Mittel) — TEILWEISE ERLEDIGT
+
+Erledigt: `AGENTS.md`, `agents/`, `commands/` und `skills/` werden nicht mehr gestaged (Entscheidung des Autors: Projekte bringen eigene mit). Es bleiben nur `cli.json` und `themes/`. Damit entfällt auch `SBX_OPENCODE_CONFIG`. Offen: Symlink-Dereferenzierung (`cp -L`) für die beiden verbleibenden Einträge.
 
 Standardquelle ist die komplette Host-Config (`~/.config/opencode`) mit Allowlist nach Namen, nicht nach Inhalt. Sie enthält zum Beispiel:
 

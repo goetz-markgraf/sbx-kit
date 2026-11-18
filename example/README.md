@@ -29,7 +29,7 @@ Die Kits haben kein Dockerfile. Alles steht im Descriptor.
 | `sbx/mise` | Docker | `mise` |
 | `kits/project-tools` | hier | `mise install` beim Erstellen, Netz zum Download nur währenddessen |
 | `kits/llm-provider` | hier | API-Key-Injection, Freigabe des API-Hosts, Plugin mit dynamischer Modellliste |
-| `kits/opencode-config` | hier | kopiert Shortcuts, Theme, `AGENTS.md`, Skills usw. vom Host in die Sandbox |
+| `kits/opencode-config` | hier | kopiert Shortcuts, Theme, Skills usw. vom Host in die Sandbox |
 
 ## Einmalige Vorbereitung auf dem Host
 
@@ -73,13 +73,13 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
   - Zur Laufzeit erlaubt: der API-Host, die Doku-Hosts und die Hosts, die der opencode-Mixin mitbringt.
   - Die Download-Hosts für die Tools sind nur während `mise install` beim Erstellen offen.
 - **mise:** `MISE_OVERRIDE_CONFIG_FILENAMES=mise.sandbox.toml` steht im Container-Env. mise liest dann nur diese Datei. Der Install-Hook führt einmal `mise trust` für sie aus. Das Docker-Kit `sbx/mise` trägt dagegen `MISE_TRUSTED_CONFIG_PATHS="/"` in die `~/.bashrc` ein. In interaktiven Shells vertraut mise damit jeder Datei im Dateisystem. Das lässt sich hier nicht ändern.
-- **opencode-Config:** Der `initialize`-Befehl in `sbxenv.yaml` kopiert aus `~/.config/opencode` nur `AGENTS.md`, `cli.json`, `agents/`, `commands/`, `skills/` und `themes/` nach `~/.sbx-history/.config-stage/<name>/`. Dieser Ordner ist read-only nach `~/.host-config/opencode` gemountet. Das Kit kopiert die Dateien bei jedem Start nach `~/.config/opencode` und überschreibt dabei gleichnamige Einträge. Nicht kopiert werden:
+- **opencode-Config:** Der `initialize`-Befehl in `sbxenv.yaml` kopiert aus `~/.config/opencode` nur `cli.json` und `themes/` nach `~/.sbx-history/.config-stage/<name>/`. Dieser Ordner ist read-only nach `~/.host-config/opencode` gemountet. Das Kit kopiert die Dateien bei jedem Start nach `~/.config/opencode` und überschreibt dabei gleichnamige Einträge. Nicht kopiert werden:
+  - `AGENTS.md`, `agents/`, `commands/` und `skills/`, weil Host-Anweisungen (Mac, Nix usw.) und Skripte in der Sandbox falsch oder unerwünscht wären. Das Projekt bringt seine eigenen mit.
   - `opencode.json`, damit der Host-Provider nicht mit dem Plugin kollidiert und keine Hinweise auf Keys mitkommen.
   - `plugins/`, weil sie Netzfreigaben bräuchten.
   - In `cli.json` fällt `plugins` weg.
-  Mit `SBX_OPENCODE_CONFIG` lässt sich ein anderer Quellordner angeben.
 - **Modellliste:** Das Plugin `~/.config/opencode/plugins/requesty.ts` fragt beim Start `/v1/models` ab und registriert den Provider bei opencode.
-- **Historie:** `~/.sbx-history/<name>/` ist als `~/.local/share/opencode` gemountet. Jede Sandbox hat einen eigenen Ordner, weil jede ihren eigenen opencode-Server mit eigener SQLite-DB startet. Sandboxen dürfen sich keinen Ordner teilen. `sbx` expandiert weder `~` noch `$HOME` in `sbxenv.yaml`. Deshalb übergibt `sbx-env.sh` `historyRoot` und `hostConfigSrc` als Env-Args. Anlegen und Befüllen der Ordner macht der `initialize`-Befehl (Historie-Ordner mit Rechten `700`).
+- **Historie:** `~/.sbx-history/<name>/` ist als `~/.local/share/opencode` gemountet. Jede Sandbox hat einen eigenen Ordner, weil jede ihren eigenen opencode-Server mit eigener SQLite-DB startet. Sandboxen dürfen sich keinen Ordner teilen. `sbx` expandiert weder `~` noch `$HOME` in `sbxenv.yaml`. Deshalb übergibt `sbx-env.sh` `historyRoot` als Env-Arg. Anlegen und Befüllen der Ordner macht der `initialize`-Befehl (Historie-Ordner mit Rechten `700`).
 
 ## Schutz der Konfiguration
 
@@ -98,7 +98,7 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
 - `MISE_OVERRIDE_CONFIG_FILENAMES=mise.sandbox.toml` steht im Container-Env (Kit-Arg mit `env:` funktioniert).
 - Die Tools aus `mise.sandbox.toml` liegen auf dem `PATH` (Java 21, Node 26).
 - `~/.config/opencode/opencode.json` legt `sbx/opencode-mixin` an, nicht unsere Kopie. Der Mixin ergänzt dort nur das MCP-Gateway. Es steht weder `provider.requesty` noch `MODEL_API_KEY` darin.
-- `AGENTS.md` aus dem Host landet in der Sandbox. Der Text des Mixins steht nicht in dieser Datei, sondern in `~/.config/opencode/kits-agent-context/opencode-mixin.md`.
+- Die Host-`AGENTS.md`, `agents/`, `commands/` und `skills/` werden nicht mehr gestaged (nicht erneut getestet). Der Text des Mixins steht nicht in dieser Datei, sondern in `~/.config/opencode/kits-agent-context/opencode-mixin.md`.
 - `cli.json` enthält Theme und Keybinds vom Host. Das Feld `plugins` ist entfernt.
 - Die Requesty-Modelle erscheinen und sind ansprechbar.
 - Das opencode-Plugin lädt laut Log und registriert Provider und Modelle.

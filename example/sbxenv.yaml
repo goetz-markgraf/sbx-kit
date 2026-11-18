@@ -14,9 +14,9 @@ cmd: ["exec opencode"]
 env:
   EDITOR: vim
 
-# historyRoot and hostConfigSrc are set by sbx-env.sh. sbx does not expand
-# $HOME or ~ in this file. The patterns exclude ' because the values are
-# inserted into single-quoted host commands below. sandboxName becomes a
+# historyRoot is set by sbx-env.sh. sbx does not expand $HOME or ~ in this
+# file. The patterns exclude ' because the values are inserted into
+# single-quoted host commands below. sandboxName becomes a
 # directory name that is used with rm -rf: no `..`, no `/`.
 args:
   sandboxName:
@@ -27,14 +27,10 @@ args:
     required: true
     description: Absolute host directory containing one opencode history directory per sandbox
     pattern: "/[^']+"
-  hostConfigSrc:
-    required: true
-    description: Absolute host path of the opencode config to copy from (allowlisted files only)
-    pattern: "/[^']+"
 
 # Runs on the host and needs approval in the plan. Make sure it is safe to run
 # repeatedly. The config stage is the allowlist for what the sandbox sees:
-# opencode.json and plugins/ are not copied.
+# only cli.json and themes/ are copied.
 lifecycle:
   initialize:
     - name: Prepare history dir and stage opencode config
@@ -42,13 +38,13 @@ lifecycle:
         set -eu
         umask 077
         root='${{ env.args.historyRoot }}'
-        src='${{ env.args.hostConfigSrc }}'
+        src="$HOME/.config/opencode"
         name='${{ env.args.sandboxName }}'
         stage="$root/.config-stage/$name"
         mkdir -p "$root/$name" "$stage"
         chmod -R u+w "$stage"
         find "$stage" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-        for entry in AGENTS.md cli.json agents commands skills themes; do
+        for entry in cli.json themes; do
           [ -e "$src/$entry" ] && cp -RL "$src/$entry" "$stage/$entry"
         done
         exit 0

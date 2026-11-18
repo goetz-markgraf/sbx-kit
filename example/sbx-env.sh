@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thin wrapper for `sbx env`. Only passes the $HOME-based host paths, because
+# Thin wrapper for `sbx env`. Only passes the $HOME-based history path, because
 # sbxenv.yaml does not expand $HOME or ~. All host work (history dir, config
 # staging) is done by lifecycle.initialize in sbxenv.yaml, which `sbx env plan`
 # shows and you approve.
@@ -10,7 +10,6 @@
 # (sbx env looks in the current directory). Put the script anywhere, e.g. on PATH.
 # Sandbox name: --env-arg sandboxName=<x> (default in sbxenv.yaml).
 # SBX_HISTORY_ROOT overrides ~/.sbx-history.
-# SBX_OPENCODE_CONFIG overrides ~/.config/opencode (the host config to copy from).
 set -euo pipefail
 
 [ -f sbxenv.yaml ] || { echo "no sbxenv.yaml in $PWD" >&2; exit 1; }
@@ -28,5 +27,4 @@ sub="${1:-run}"
 
 exec sbx env "$sub" \
   --env-arg "historyRoot=${SBX_HISTORY_ROOT:-$HOME/.sbx-history}" \
-  --env-arg "hostConfigSrc=${SBX_OPENCODE_CONFIG:-$HOME/.config/opencode}" \
   "$@"
