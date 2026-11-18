@@ -11,6 +11,9 @@ workspace: .
 entrypoint: [/bin/bash, -lc]
 cmd: ["exec opencode"]
 
+env:
+  EDITOR: vim
+
 # Set by sbx-env.sh. sbx does not expand $HOME or ~ in this file.
 args:
   historyDir:
@@ -23,7 +26,7 @@ args:
 kits:
   - docker.io/sbx/shell:latest
   - docker.io/sbx/opencode-mixin:latest
-  - docker.io/sbx/mise-mixin:latest
+  - docker.io/sbx/mise:latest
   - ./kits/project-tools
   - ./kits/opencode-config
   - source: ./kits/llm-provider

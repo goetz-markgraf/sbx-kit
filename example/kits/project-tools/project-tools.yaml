@@ -5,7 +5,7 @@ description: Installs the tools from the workspace's mise.sandbox.toml once at c
 
 kind: mixin
 version: "1.0.0"
-# Ensures mise-mixin's hooks run before this kit's install hook.
+# Ensures the sbx/mise kit's hooks run before this kit's install hook.
 requires: ["mise"]
 
 args:
@@ -55,6 +55,10 @@ capabilities:
           user: "0"
           env: [HTTP_PROXY, HTTPS_PROXY, NO_PROXY, http_proxy, https_proxy, no_proxy]
           description: Install shared libraries the mise tools need
+        # The hardened base image ships /usr/bin/vim.basic but no `vim` alternatives link.
+        - command: ln -sf /usr/bin/vim.basic /usr/bin/vim
+          user: "0"
+          description: Make vim callable by its usual name
         - command: |
             cd "$WORKSPACE_DIR"
             if [ ! -f "${{ kit.args.configFile }}" ]; then

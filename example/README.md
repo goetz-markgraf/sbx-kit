@@ -24,9 +24,9 @@ Die Kits haben kein Dockerfile. Alles steht im Descriptor.
 
 | Kit | Herkunft | Aufgabe |
 |---|---|---|
-| `sbx/shell` | Docker | Basis: Debian, bash, git, agent-User |
+| `sbx/shell` | Docker | Basis: Debian, bash, git, agent-User, vim (als `vim.basic`, Link legt `project-tools` an), jq |
 | `sbx/opencode-mixin` | Docker | opencode 2.x |
-| `sbx/mise-mixin` | Docker | `mise` |
+| `sbx/mise` | Docker | `mise` |
 | `kits/project-tools` | hier | `mise install` beim Erstellen, Netz zum Download nur währenddessen |
 | `kits/llm-provider` | hier | API-Key-Injection, Freigabe des API-Hosts, Plugin mit dynamischer Modellliste |
 | `kits/opencode-config` | hier | kopiert Shortcuts, Theme, `AGENTS.md`, Skills usw. vom Host in die Sandbox |
@@ -53,6 +53,7 @@ Den Requesty-Key holt sbx aus `op://Employee/RequestyApiKey/password`. Er liegt 
 Das Verzeichnis kopieren und in die Projektwurzel legen. Dann anpassen:
 
 - **Name:** `name` in `sbxenv.yaml`. Er bestimmt Sandbox und Historie-Ordner.
+- **Umgebungsvariablen:** `env:` in `sbxenv.yaml`, z. B. `EDITOR: vim`. Änderungen gelten ab dem nächsten `run`, ohne die Sandbox neu zu erstellen.
 - **Dev-Tools:** `mise.sandbox.toml` bearbeiten. Für neue Download-Hosts `install.allow` in `kits/project-tools/project-tools.yaml` ergänzen. Fehlen einem Tool Systembibliotheken (z. B. `libatomic1` für Node), das apt-Paket im ersten Install-Hook ergänzen.
 - **Provider:** In `sbxenv.yaml` die `args` des `llm-provider`-Kits setzen. Dazu `secrets` und `bindings` mit demselben `id` und `host` anlegen.
 
@@ -64,7 +65,7 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
 - **Netz:** Standard ist „alles gesperrt“.
   - Zur Laufzeit erlaubt: der API-Host, die Doku-Hosts und die Hosts, die der opencode-Mixin mitbringt.
   - Die Download-Hosts für die Tools sind nur während `mise install` beim Erstellen offen.
-- **mise:** `MISE_OVERRIDE_CONFIG_FILENAMES=mise.sandbox.toml` steht im Container-Env. mise liest dann nur diese Datei. Der Install-Hook führt einmal `mise trust` für sie aus.
+- **mise:** `MISE_OVERRIDE_CONFIG_FILENAMES=mise.sandbox.toml` steht im Container-Env. mise liest dann nur diese Datei. Der Install-Hook führt einmal `mise trust` für sie aus. Das Docker-Kit `sbx/mise` trägt dagegen `MISE_TRUSTED_CONFIG_PATHS="/"` in die `~/.bashrc` ein. In interaktiven Shells vertraut mise damit jeder Datei im Dateisystem. Das lässt sich hier nicht ändern.
 - **opencode-Config:** `sbx-env.sh` kopiert aus `~/.config/opencode` nur `AGENTS.md`, `cli.json`, `agents/`, `commands/`, `skills/` und `themes/` nach `~/.sbx-history/.config-stage/<name>/`. Dieser Ordner ist read-only nach `~/.host-config/opencode` gemountet. Das Kit kopiert die Dateien bei jedem Start nach `~/.config/opencode` und überschreibt dabei gleichnamige Einträge. Nicht kopiert werden:
   - `opencode.json`, damit der Host-Provider nicht mit dem Plugin kollidiert und keine Hinweise auf Keys mitkommen.
   - `plugins/`, weil sie Netzfreigaben bräuchten.
@@ -82,20 +83,19 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
 
 - mise lädt mit `MISE_OVERRIDE_CONFIG_FILENAMES` nur die genannte Datei (mise 2026.11.0, lokal getestet).
 - `mise trust` bleibt nach Änderungen der Datei gültig.
-- `workspace: .` meint laut Doku das Verzeichnis der `sbxenv.yaml`.
+- `./sbx-env.sh plan` löst `workspace: .` und die Args `historyDir` und `hostConfigDir` in `additionalWorkspaces.path` auf. Er akzeptiert absolute Pfade außerhalb des Workspaces und `readOnly: true`.
+- `jq` ist in der Sandbox installiert.
+- `MISE_OVERRIDE_CONFIG_FILENAMES=mise.sandbox.toml` steht im Container-Env (Kit-Arg mit `env:` funktioniert).
+- Die Tools aus `mise.sandbox.toml` liegen auf dem `PATH` (Java 21, Node 26).
+- `~/.config/opencode/opencode.json` legt `sbx/opencode-mixin` an, nicht unsere Kopie. Der Mixin ergänzt dort nur das MCP-Gateway. Es steht weder `provider.requesty` noch `MODEL_API_KEY` darin.
+- `AGENTS.md` aus dem Host landet in der Sandbox. Der Text des Mixins steht nicht in dieser Datei, sondern in `~/.config/opencode/kits-agent-context/opencode-mixin.md`.
+- `cli.json` enthält Theme und Keybinds vom Host. Das Feld `plugins` ist entfernt.
+- Die Requesty-Modelle erscheinen und sind ansprechbar.
 - Das opencode-Plugin lädt laut Log und registriert Provider und Modelle.
 
 ## Ungeprüft
 
-- Kit `opencode-config`:
-  - Der Startup-Hook läuft vor dem Start von opencode und vor dem Plugin-Laden.
-  - Ein Kit mit ähnlicher Aufgabe liegt in der Sandbox, in der ich gearbeitet habe (`/usr/share/sandbox/kit/spec/kit.yaml`). Es kopiert über einen eigenen Launcher aus `~/opencode-host-config` nach `~/.config/opencode`. Ob `sbx/opencode-mixin` aus `sbxenv.yaml` dasselbe tut, habe ich nicht geprüft. Falls ja, überschreiben sich beide eventuell. Unser Entrypoint ruft `opencode` direkt auf und nicht über diesen Launcher.
-  - `jq` ist im Image vorhanden, wurde aber nicht in der echten Sandbox ausgeführt.
-- Ob `readOnly: true` bei einem `additionalWorkspaces`-Eintrag mit Zielpfad `~/.host-config/opencode` funktioniert.
-
-- `args` mit `env:` im Kit (`project-tools`). Die Spec erlaubt es, ich habe es nicht in einer laufenden sbx gesehen.
-- `${{ env.args.historyDir }}` in `additionalWorkspaces.path`. Die Doku nennt Args für „jeden YAML-Wert“.
-- Ob ein absoluter Pfad außerhalb des Workspaces als zusätzlicher Mount akzeptiert wird.
+- Der Startup-Hook von `kits/opencode-config` läuft vor dem Start von opencode. Die Dateien liegen nach dem Start dort. Ob die TUI beim ersten Start schon Theme und Shortcuts nutzt, ist nicht bestätigt.
+- Der Hook überschreibt `cli.json` und die anderen kopierten Einträge bei jedem Start. Der Host ist die Quelle, Einstellungen ändert man dort. Die Sandbox-Datei enthält `session.sidebar: hide`, die Host-Fassung, die ich gesehen habe, nicht. Vermutlich hat die TUI das in der Sandbox geschrieben. Solche Einstellungen gehen beim nächsten Start verloren.
 - Ob die Download-Hosts in `project-tools` für alle Tools reichen. Bei Fehlern zeigt `sbx policy log` die gesperrten Hosts.
-- Ob die Tools nach `mise install` in der Agent-Shell auf `PATH` liegen.
 - `asciidoctor` kommt über `npm:@asciidoctor/cli` (asciidoctor.js), nicht über Ruby.
