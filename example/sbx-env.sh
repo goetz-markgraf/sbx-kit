@@ -22,6 +22,7 @@ mkdir -p "$history_dir"
 config_src="${SBX_OPENCODE_CONFIG:-$HOME/.config/opencode}"
 config_dir="$root/.config-stage/$name"
 mkdir -p "$config_dir"
+chmod -R u+w "$config_dir"
 find "$config_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 for entry in AGENTS.md cli.json agents commands skills themes; do
   [ -e "$config_src/$entry" ] && cp -RL "$config_src/$entry" "$config_dir/$entry"

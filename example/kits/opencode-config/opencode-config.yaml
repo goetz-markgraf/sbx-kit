@@ -24,6 +24,7 @@ capabilities:
             mkdir -p "$dst"
             for name in AGENTS.md cli.json agents commands skills themes; do
               [ -e "$src/$name" ] || continue
+              chmod -R u+w "$dst/$name" 2>/dev/null || true
               rm -rf "$dst/$name"
               cp -R "$src/$name" "$dst/$name"
             done

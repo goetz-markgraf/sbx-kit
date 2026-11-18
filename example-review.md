@@ -22,9 +22,9 @@ Das Konzept ist solide und nah an den sbx-Idiomen: Kits als Mixins, proxy-verwal
 
 Hauptprobleme:
 
-1. `sbx-env.sh` bricht ab dem **zweiten Start** ab, wenn die Host-Config schreibgeschützt ist (typisch bei Nix). [V]
+1. ~~`sbx-env.sh` bricht ab dem **zweiten Start** ab, wenn die Host-Config schreibgeschützt ist (typisch bei Nix). [V]~~ Erledigt (I-8).
 2. `sbx-env.sh` und `kits/` liegen im vom Agenten beschreibbaren Workspace. `sbx-env.sh` läuft ungeprüft auf dem Host. [D]
-3. Die Namensableitung per `sed` ist fragil. Ein Name wie `..` löscht alle Historien. [V]
+3. ~~Die Namensableitung per `sed` ist fragil. Ein Name wie `..` löscht alle Historien. [V]~~ Erledigt (I-1, I-2).
 4. Das Feature „Provider austauschbar“ ist nur für OpenAI-kompatible APIs mit `Authorization: Bearer` erfüllt.
 5. Provider-ID und Host stehen an mehreren Stellen. Die Allowlist der Config steht dreifach vor.
 
@@ -50,14 +50,14 @@ Hauptprobleme:
 | W-7 | Netz-Allowlist von Tools und `mise.sandbox.toml` getrennt | Niedrig |
 | W-8 | README mischt Doku, Testprotokoll und Arbeitsnotizen | Niedrig |
 | W-9 | Nicht pinnbare/ungepinnte Versionen (`latest`) | Mittel |
-| I-1 | Name per `sed` aus YAML gelesen | Hoch |
-| I-2 | `--name`-Override trennt Sandbox-Name und Historien-Ordner | Mittel |
+| I-1 | Name per `sed` aus YAML gelesen | Hoch, **erledigt** |
+| I-2 | `--name`-Override trennt Sandbox-Name und Historien-Ordner | Mittel, **erledigt** |
 | I-3 | Wrapper-Skript statt sbx-Mitteln (`lifecycle`, `mounts`, `host-mount@1`) | Mittel |
 | I-4 | `shell`-Workload plus `opencode-mixin` statt `agent: opencode` | Frage |
 | I-5 | `workload` doppelt: `agent: shell` und `sbx/shell` in `kits` | Niedrig |
 | I-6 | `network-policy@1` statt `@2`, `:443`-Suffix mit unklarer Wirkung | Niedrig |
 | I-7 | `args` ohne `pattern` für Pfade, `name` ohne `pattern` | Niedrig |
-| I-8 | Kopie mit `cp -RL` / Rechte der Kopie | Hoch |
+| I-8 | Kopie mit `cp -RL` / Rechte der Kopie | Hoch, **erledigt** |
 | S-1 | `sbx-env.sh` läuft auf dem Host und ist für den Agenten beschreibbar | Hoch |
 | S-2 | `kits/` im beschreibbaren Workspace | Mittel |
 | S-3 | `git diff` als Prüfmittel ist selbst angreifbar | Mittel |
@@ -209,7 +209,9 @@ Die Download-Hosts in `project-tools.yaml` müssen zu den Tools in `mise.sandbox
 
 ## 3. Idiomatische Realisierung
 
-### I-1 Name per `sed` aus YAML gelesen (Hoch) [V]
+### I-1 Name per `sed` aus YAML gelesen (Hoch) [V] — ERLEDIGT
+
+Erledigt in `sbx-env.sh`: `sed` entfernt Anführungszeichen und Kommentar, der Name wird per Regex validiert (`..`, `.`, `/` werden abgelehnt). Mit Stub-`sbx` getestet. Die vollständige Lösung ohne `sed` bleibt I-3.
 
 `name=$(sed -n 's/^name: *//p' sbxenv.yaml | head -n 1)` versteht kein YAML.
 
@@ -226,7 +228,9 @@ Quotes im Namen sind in YAML üblich. Ein späterer Wechsel zwischen `name: x` u
 
 Empfehlung: Den Namen validieren (`[[ $name =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]`, ohne `..`), und die Datei nicht mit `sed` parsen (siehe I-3).
 
-### I-2 `--name`-Override trennt Sandbox-Name und Historien-Ordner (Mittel) [V]
+### I-2 `--name`-Override trennt Sandbox-Name und Historien-Ordner (Mittel) [V] — ERLEDIGT
+
+Erledigt in `sbx-env.sh`: `--name <x>` und `--name=<x>` (vor einem `--`) bestimmen auch den Historien-Ordner. Mit Stub-`sbx` getestet.
 
 `sbx env run --name other` benennt die Sandbox um, aber `historyDir` bleibt `…/proj`. Zwei Sandboxen mit verschiedenen `--name` teilen sich so denselben Ordner. Das ist genau der Fall, den die README verbietet („Sandboxen dürfen sich keinen Ordner teilen“, eigene SQLite-DB pro Server). Die Docs nennen `--name` ausdrücklich als Standardflag. Das Skript sollte `--name` auswerten oder ablehnen.
 
@@ -259,7 +263,9 @@ Die Docs kennen den Weg „Built-in-Agent plus Mixins“ (`agent: opencode`, `ki
 - `llm-provider.yaml`: `name` hat kein `pattern` und wird als `"${{ kit.args.name }}"` in den TS-Quelltext gesetzt. Ein `"` im Namen bricht das Plugin. Die Quelle ist die schreibgeschützte `sbxenv.yaml`, daher kein Angriff, aber ein Robustheitsfehler.
 - Gut gelöst: Alle Args, die in Shell oder Pfade fließen (`id`, `host`, `basePath`, `envName`, `defaultModel`, `configFile`), haben enge Patterns. Das ist die richtige Praxis.
 
-### I-8 Kopie mit `cp -RL` / Rechte der Kopie (Hoch) [V]
+### I-8 Kopie mit `cp -RL` / Rechte der Kopie (Hoch) [V] — ERLEDIGT
+
+Erledigt: `chmod -R u+w` vor dem Löschen in `sbx-env.sh` und im Hook von `opencode-config.yaml`. Nicht auf dem Host getestet. Die Symlink-Dereferenzierung durch `-L` bleibt (siehe S-6).
 
 `cp -RL` übernimmt die Rechtebits der Quelle. Bei schreibgeschützten Quellen, die etwa Nix/Home-Manager erzeugt (Dateien `444`, Verzeichnisse `555`), sind auch Staging-Kopien schreibgeschützt.
 
@@ -351,9 +357,9 @@ Laut Docs sind Credential-Bindings global und bleiben nach `sbx env rm` bestehen
 
 ## Priorisierte Empfehlung
 
-1. **I-8:** Rechte nach dem Kopieren und vor dem Löschen korrigieren (Skript und Kit-Hook). Ohne das startet die Sandbox beim zweiten Mal nicht.
+1. ~~**I-8:** Rechte nach dem Kopieren und vor dem Löschen korrigieren (Skript und Kit-Hook). Ohne das startet die Sandbox beim zweiten Mal nicht.~~ Erledigt.
 2. **S-1/S-2:** `sbx-env.sh` und `kits/` aus dem beschreibbaren Workspace nehmen oder die Host-Logik nach `lifecycle.initialize` verlegen (I-3).
-3. **I-1/I-2:** Den Namen validieren und `--name` berücksichtigen. Das verhindert den Totalverlust der Historien.
+3. ~~**I-1/I-2:** Den Namen validieren und `--name` berücksichtigen. Das verhindert den Totalverlust der Historien.~~ Erledigt.
 4. **S-6:** Dediziertes Config-Verzeichnis als Standard, Host-Config als Opt-in.
 5. **W-1/W-2:** Env-Args als einzige Quelle für ID und Host. Allowlist nur im Staging.
 6. **V-1/V-2/V-4:** Auth-Header als Arg, Modellfilter, Fehlerbehandlung im Plugin.
@@ -370,7 +376,7 @@ Laut Docs sind Credential-Bindings global und bleiben nach `sbx env rm` bestehen
 
 ## Auf dem Host zu testen [?]
 
-- Zweiter `./sbx-env.sh run` bei Nix-verwalteter Config (I-8).
+- Zweiter `./sbx-env.sh run` bei Nix-verwalteter Config (I-8, Fix umgesetzt, noch nicht getestet).
 - Session überlebt `rm` und Neuerstellen, SQLite auf dem Mount (V-5).
 - Effektive Runtime-Allowlist per `sbx policy ls` (V-6).
 - Wirkung von `:443`, ob `@2`-Pfadgrenzen die Key-Injektion beeinflussen (I-6, S-4).
