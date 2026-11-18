@@ -1,5 +1,5 @@
 schemaVersion: "1"
-name: requesty-test
+name: ${{ env.args.sandboxName }}
 agent: shell
 
 # The directory containing this file is the workspace. sbx mounts this file
@@ -14,14 +14,45 @@ cmd: ["exec opencode"]
 env:
   EDITOR: vim
 
-# Set by sbx-env.sh. sbx does not expand $HOME or ~ in this file.
+# historyRoot and hostConfigSrc are set by sbx-env.sh. sbx does not expand
+# $HOME or ~ in this file. The patterns exclude ' because the values are
+# inserted into single-quoted host commands below. sandboxName becomes a
+# directory name that is used with rm -rf: no `..`, no `/`.
 args:
-  historyDir:
+  sandboxName:
+    default: requesty-test
+    description: Sandbox name. Also names the history directory
+    pattern: "[A-Za-z0-9]+([._-][A-Za-z0-9]+)*"
+  historyRoot:
     required: true
-    description: Absolute host path for the opencode history of this sandbox
-  hostConfigDir:
+    description: Absolute host directory containing one opencode history directory per sandbox
+    pattern: "/[^']+"
+  hostConfigSrc:
     required: true
-    description: Absolute host path of the staged opencode config (allowlisted files only)
+    description: Absolute host path of the opencode config to copy from (allowlisted files only)
+    pattern: "/[^']+"
+
+# Runs on the host and needs approval in the plan. Make sure it is safe to run
+# repeatedly. The config stage is the allowlist for what the sandbox sees:
+# opencode.json and plugins/ are not copied.
+lifecycle:
+  initialize:
+    - name: Prepare history dir and stage opencode config
+      command: |
+        set -eu
+        umask 077
+        root='${{ env.args.historyRoot }}'
+        src='${{ env.args.hostConfigSrc }}'
+        name='${{ env.args.sandboxName }}'
+        stage="$root/.config-stage/$name"
+        mkdir -p "$root/$name" "$stage"
+        chmod -R u+w "$stage"
+        find "$stage" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        for entry in AGENTS.md cli.json agents commands skills themes; do
+          [ -e "$src/$entry" ] && cp -RL "$src/$entry" "$stage/$entry"
+        done
+        exit 0
+      timeout: 1m
 
 kits:
   - docker.io/sbx/shell:latest
@@ -49,9 +80,9 @@ bindings:
 # One history directory per sandbox: opencode runs its own server with its own
 # SQLite database, so sandboxes must not share one.
 additionalWorkspaces:
-  - path: ${{ env.args.historyDir }}
+  - path: ${{ env.args.historyRoot }}/${{ env.args.sandboxName }}
     target: /home/agent/.local/share/opencode
   # Read-only. The target must match kits/opencode-config.
-  - path: ${{ env.args.hostConfigDir }}
+  - path: ${{ env.args.historyRoot }}/.config-stage/${{ env.args.sandboxName }}
     target: /home/agent/.host-config/opencode
     readOnly: true

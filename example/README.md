@@ -7,7 +7,7 @@ Eine Sandbox mit opencode, Requesty (EU-Router) als Modellquelle und projektspez
 ```
 example/                             # Workspace und Startverzeichnis
 ├── sbxenv.yaml                      # Konfiguration der Sandbox
-├── sbx-env.sh                       # Startskript: Historie, Host-Config, ruft sbx env auf
+├── sbx-env.sh                       # dünner Wrapper: übergibt nur die $HOME-Pfade an sbx env
 ├── mise.sandbox.toml                # Dev-Tools dieses Projekts
 └── kits/
     ├── llm-provider/                # Mixin: Credential, Netz, opencode-Plugin
@@ -37,14 +37,20 @@ Die Kits haben kein Dockerfile. Alles steht im Descriptor.
    ```sh
    sbx policy init deny-all
    ```
-2. 1Password CLI (`op`) installieren und anmelden. Das Verzeichnis muss als absoluter Pfad im `PATH` stehen.
-3. Starten:
+2. Genehmigung der Host-Befehle merken:
+   ```sh
+   sbx settings set env.rememberHostCommands true
+   ```
+   Ohne diese Einstellung verlangt sbx bei jedem `run` eine Genehmigung des Plans, weil `sbxenv.yaml` einen Host-Befehl (`lifecycle.initialize`) enthält. Mit ihr fragt sbx nur beim ersten Start und wenn sich der Befehl ändert. Die Einstellung gilt für alle Umgebungen auf dem Host.
+3. 1Password CLI (`op`) installieren und anmelden. Das Verzeichnis muss als absoluter Pfad im `PATH` stehen.
+4. Starten:
    ```sh
    ./sbx-env.sh plan
    ./sbx-env.sh run
    ```
-4. `run` startet direkt opencode. Eine Shell gibt es mit `./sbx-env.sh run -- bash`.
-5. Entfernen: `./sbx-env.sh rm`. Die Historie bleibt erhalten.
+   Das Skript ist ortsunabhängig. Entscheidend ist das aktuelle Verzeichnis: Es muss `sbxenv.yaml` enthalten. Das Skript kann daher auch an anderer Stelle liegen, zum Beispiel im `PATH`, und wird dann als `sbx-env.sh run` aus dem Projektordner gestartet.
+5. `run` startet direkt opencode. Eine Shell gibt es mit `./sbx-env.sh run -- bash`.
+6. Entfernen: `./sbx-env.sh rm`. Die Historie bleibt erhalten.
 
 Den Requesty-Key holt sbx aus `op://Employee/RequestyApiKey/password`. Er liegt nicht in der Datei.
 
@@ -52,7 +58,7 @@ Den Requesty-Key holt sbx aus `op://Employee/RequestyApiKey/password`. Er liegt 
 
 Das Verzeichnis kopieren und in die Projektwurzel legen. Dann anpassen:
 
-- **Name:** `name` in `sbxenv.yaml`. Er bestimmt Sandbox und Historie-Ordner.
+- **Name:** `sandboxName` (Default der `args` in `sbxenv.yaml`) oder `./sbx-env.sh run --env-arg sandboxName=<x>`. Er bestimmt Sandbox und Historie-Ordner. `--name` lehnt das Skript ab.
 - **Umgebungsvariablen:** `env:` in `sbxenv.yaml`, z. B. `EDITOR: vim`. Änderungen gelten ab dem nächsten `run`, ohne die Sandbox neu zu erstellen.
 - **Dev-Tools:** `mise.sandbox.toml` bearbeiten. Für neue Download-Hosts `install.allow` in `kits/project-tools/project-tools.yaml` ergänzen. Fehlen einem Tool Systembibliotheken (z. B. `libatomic1` für Node), das apt-Paket im ersten Install-Hook ergänzen.
 - **Provider:** In `sbxenv.yaml` die `args` des `llm-provider`-Kits setzen. Dazu `secrets` und `bindings` mit demselben `id` und `host` anlegen. `defaultModel` ist optional. Ohne Angabe trägt ein Startup-Hook das erste Modell der `/v1/models`-Liste als `model` in `~/.config/opencode/opencode.json` ein, aber nur solange dort noch keins steht. Mit `defaultModel` (ID ohne Provider-Präfix) wählst du ein bestimmtes.
@@ -62,28 +68,32 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
 ## Was wie zusammenhängt
 
 - **Credential:** Die Sandbox sieht nur einen Platzhalter in `REQUESTY_API_KEY`. Der Host-Proxy setzt den echten Key nur für `router.eu.requesty.ai`.
+- **Abfrage „This kit wants to use these credentials“:** Sie kommt bei jedem Erstellen und stammt von `sbx/opencode-mixin`, nicht von unseren Kits. Der Mixin fragt optional Zugriff auf `anthropic`, `github`, `google`, `groq`, `openai`, `openrouter` und `xai` an. Alle sind „not set“. Der Mixin hat nur das Kit-Arg `version`, die Abfrage lässt sich also nicht per Arg abschalten. Wir nutzen keinen dieser Dienste, deshalb ist **3 (No)** richtig und mit ENTER bestätigt (Default). Der Requesty-Key ist davon unabhängig. Wer die Abfrage loswerden will, kann einmal „Approve all“ wählen (gilt host-global in `~/.config/sbx/credentials.yaml`). Das wird hier nicht empfohlen: Ein später gesetzter Key, etwa `sbx secret set github`, würde dann auch in dieser Sandbox injiziert.
 - **Netz:** Standard ist „alles gesperrt“.
   - Zur Laufzeit erlaubt: der API-Host, die Doku-Hosts und die Hosts, die der opencode-Mixin mitbringt.
   - Die Download-Hosts für die Tools sind nur während `mise install` beim Erstellen offen.
 - **mise:** `MISE_OVERRIDE_CONFIG_FILENAMES=mise.sandbox.toml` steht im Container-Env. mise liest dann nur diese Datei. Der Install-Hook führt einmal `mise trust` für sie aus. Das Docker-Kit `sbx/mise` trägt dagegen `MISE_TRUSTED_CONFIG_PATHS="/"` in die `~/.bashrc` ein. In interaktiven Shells vertraut mise damit jeder Datei im Dateisystem. Das lässt sich hier nicht ändern.
-- **opencode-Config:** `sbx-env.sh` kopiert aus `~/.config/opencode` nur `AGENTS.md`, `cli.json`, `agents/`, `commands/`, `skills/` und `themes/` nach `~/.sbx-history/.config-stage/<name>/`. Dieser Ordner ist read-only nach `~/.host-config/opencode` gemountet. Das Kit kopiert die Dateien bei jedem Start nach `~/.config/opencode` und überschreibt dabei gleichnamige Einträge. Nicht kopiert werden:
+- **opencode-Config:** Der `initialize`-Befehl in `sbxenv.yaml` kopiert aus `~/.config/opencode` nur `AGENTS.md`, `cli.json`, `agents/`, `commands/`, `skills/` und `themes/` nach `~/.sbx-history/.config-stage/<name>/`. Dieser Ordner ist read-only nach `~/.host-config/opencode` gemountet. Das Kit kopiert die Dateien bei jedem Start nach `~/.config/opencode` und überschreibt dabei gleichnamige Einträge. Nicht kopiert werden:
   - `opencode.json`, damit der Host-Provider nicht mit dem Plugin kollidiert und keine Hinweise auf Keys mitkommen.
   - `plugins/`, weil sie Netzfreigaben bräuchten.
   - In `cli.json` fällt `plugins` weg.
   Mit `SBX_OPENCODE_CONFIG` lässt sich ein anderer Quellordner angeben.
 - **Modellliste:** Das Plugin `~/.config/opencode/plugins/requesty.ts` fragt beim Start `/v1/models` ab und registriert den Provider bei opencode.
-- **Historie:** `~/.sbx-history/<name>/` ist als `~/.local/share/opencode` gemountet. Jede Sandbox hat einen eigenen Ordner, weil jede ihren eigenen opencode-Server mit eigener SQLite-DB startet. Sandboxen dürfen sich keinen Ordner teilen. `sbx` expandiert weder `~` noch `$HOME` in `sbxenv.yaml`. Deshalb übergibt `sbx-env.sh` den Pfad als `historyDir`.
+- **Historie:** `~/.sbx-history/<name>/` ist als `~/.local/share/opencode` gemountet. Jede Sandbox hat einen eigenen Ordner, weil jede ihren eigenen opencode-Server mit eigener SQLite-DB startet. Sandboxen dürfen sich keinen Ordner teilen. `sbx` expandiert weder `~` noch `$HOME` in `sbxenv.yaml`. Deshalb übergibt `sbx-env.sh` `historyRoot` und `hostConfigSrc` als Env-Args. Anlegen und Befüllen der Ordner macht der `initialize`-Befehl (Historie-Ordner mit Rechten `700`).
 
 ## Schutz der Konfiguration
 
 - `sbxenv.yaml` liegt im Workspace-Root. sbx mountet sie dort schreibgeschützt.
-- `kits/`, `mise.sandbox.toml` und `sbx-env.sh` sind für den Agenten schreibbar. Änderungen wirken erst beim nächsten Erstellen der Sandbox. Prüfe sie vorher mit `git diff` und dem Plan von `./sbx-env.sh plan`.
+- Alle Host-Befehle stehen in `lifecycle.initialize` von `sbxenv.yaml`. Sie erscheinen im Plan und brauchen deine Zustimmung. Mit `env.rememberHostCommands` (siehe Vorbereitung) fragt sbx nur beim ersten Start und bei jeder Änderung des Befehls. Prüfe den Plan vor dem Bestätigen.
+- `sbx-env.sh` ist weiterhin für den Agenten schreibbar und läuft ohne Plan auf dem Host. Es setzt nur zwei Env-Args, kann aber jederzeit beliebigen Code enthalten. Restrisiko: Prüfe es vor dem Start oder lege es außerhalb des Workspace ab, zum Beispiel in `~/bin`.
+- `kits/` und `mise.sandbox.toml` sind schreibbar. Änderungen wirken erst beim nächsten Erstellen der Sandbox. Prüfe sie vorher mit `git diff` und dem Plan von `./sbx-env.sh plan`.
 
 ## Geprüft
 
 - mise lädt mit `MISE_OVERRIDE_CONFIG_FILENAMES` nur die genannte Datei (mise 2026.11.0, lokal getestet).
 - `mise trust` bleibt nach Änderungen der Datei gültig.
-- `./sbx-env.sh plan` löst `workspace: .` und die Args `historyDir` und `hostConfigDir` in `additionalWorkspaces.path` auf. Er akzeptiert absolute Pfade außerhalb des Workspaces und `readOnly: true`.
+- Der `initialize`-Befehl (Historie-Ordner anlegen, Config stagen) läuft in `sh` zweimal hintereinander durch, auch bei schreibgeschützter Quelle (Linux, GNU, lokal getestet).
+- `./sbx-env.sh plan` löst `workspace: .` und die Pfade der Args in `additionalWorkspaces.path` auf. Er akzeptiert absolute Pfade außerhalb des Workspaces und `readOnly: true`. (Vor der Umstellung auf `initialize` getestet, nicht erneut.)
 - `jq` ist in der Sandbox installiert.
 - `MISE_OVERRIDE_CONFIG_FILENAMES=mise.sandbox.toml` steht im Container-Env (Kit-Arg mit `env:` funktioniert).
 - Die Tools aus `mise.sandbox.toml` liegen auf dem `PATH` (Java 21, Node 26).
@@ -95,6 +105,8 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
 
 ## Ungeprüft
 
+- Der neue `lifecycle.initialize`-Block: ob sbx `${{ env.args.* }}` und die Patterns darin wie dokumentiert auflöst, `name: ${{ env.args.sandboxName }}` funktioniert und der Plan den Befehl anzeigt. Der Befehl läuft ohne sbx nur als Shell-Test.
+- Ob die Rechte `700` des Staging-Ordners dem Mount in der VM nichts verbauen (Lesezugriff des `agent`-Users).
 - Das Startmodell: Ob der Startup-Hook von `llm-provider` die Modellliste abruft (Netz im Hook, Proxy-Umgebung, Zertifikat) und `model` in `opencode.json` einträgt. Schlägt der Abruf fehl, meldet der Hook das und lässt die Datei unverändert.
 - Der Startup-Hook von `kits/opencode-config` läuft vor dem Start von opencode. Die Dateien liegen nach dem Start dort. Ob die TUI beim ersten Start schon Theme und Shortcuts nutzt, ist nicht bestätigt.
 - Der Hook überschreibt `cli.json` und die anderen kopierten Einträge bei jedem Start. Der Host ist die Quelle, Einstellungen ändert man dort. Die Sandbox-Datei enthält `session.sidebar: hide`, die Host-Fassung, die ich gesehen habe, nicht. Vermutlich hat die TUI das in der Sandbox geschrieben. Solche Einstellungen gehen beim nächsten Start verloren.

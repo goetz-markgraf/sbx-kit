@@ -23,7 +23,7 @@ Das Konzept ist solide und nah an den sbx-Idiomen: Kits als Mixins, proxy-verwal
 Hauptprobleme:
 
 1. ~~`sbx-env.sh` bricht ab dem **zweiten Start** ab, wenn die Host-Config schreibgeschützt ist (typisch bei Nix). [V]~~ Erledigt (I-8).
-2. `sbx-env.sh` und `kits/` liegen im vom Agenten beschreibbaren Workspace. `sbx-env.sh` läuft ungeprüft auf dem Host. [D]
+2. `sbx-env.sh` und `kits/` liegen im vom Agenten beschreibbaren Workspace. `sbx-env.sh` läuft ungeprüft auf dem Host. [D] Teilweise erledigt (I-3, S-1): Die Host-Logik liegt jetzt in `lifecycle.initialize`. Das dünne Skript und `kits/` bleiben im Workspace.
 3. ~~Die Namensableitung per `sed` ist fragil. Ein Name wie `..` löscht alle Historien. [V]~~ Erledigt (I-1, I-2).
 4. Das Feature „Provider austauschbar“ ist nur für OpenAI-kompatible APIs mit `Authorization: Bearer` erfüllt.
 5. Provider-ID und Host stehen an mehreren Stellen. Die Allowlist der Config steht dreifach vor.
@@ -52,20 +52,20 @@ Hauptprobleme:
 | W-9 | Nicht pinnbare/ungepinnte Versionen (`latest`) | Mittel |
 | I-1 | Name per `sed` aus YAML gelesen | Hoch, **erledigt** |
 | I-2 | `--name`-Override trennt Sandbox-Name und Historien-Ordner | Mittel, **erledigt** |
-| I-3 | Wrapper-Skript statt sbx-Mitteln (`lifecycle`, `mounts`, `host-mount@1`) | Mittel |
+| I-3 | Wrapper-Skript statt sbx-Mitteln (`lifecycle`, `mounts`, `host-mount@1`) | Mittel, **teilweise erledigt** |
 | I-4 | `shell`-Workload plus `opencode-mixin` statt `agent: opencode` | Frage |
 | I-5 | `workload` doppelt: `agent: shell` und `sbx/shell` in `kits` | Niedrig |
 | I-6 | `network-policy@1` statt `@2`, `:443`-Suffix mit unklarer Wirkung | Niedrig |
-| I-7 | `args` ohne `pattern` für Pfade, `name` ohne `pattern` | Niedrig |
+| I-7 | `args` ohne `pattern` für Pfade, `name` ohne `pattern` | Niedrig, **teilweise erledigt** |
 | I-8 | Kopie mit `cp -RL` / Rechte der Kopie | Hoch, **erledigt** |
-| S-1 | `sbx-env.sh` läuft auf dem Host und ist für den Agenten beschreibbar | Hoch |
+| S-1 | `sbx-env.sh` läuft auf dem Host und ist für den Agenten beschreibbar | Hoch, **teilweise erledigt** |
 | S-2 | `kits/` im beschreibbaren Workspace | Mittel |
 | S-3 | `git diff` als Prüfmittel ist selbst angreifbar | Mittel |
 | S-4 | Credential kann im ganzen API-Host genutzt werden | Mittel |
 | S-5 | Deny-all fragt nach, statt hart zu sperren | Mittel |
 | S-6 | Host-`AGENTS.md`/Skills landen ungeprüft in der Sandbox | Mittel |
 | S-7 | `:latest`-Kits ohne Pinning oder Signatur | Mittel |
-| S-8 | Historienverzeichnis mit Standardrechten | Niedrig |
+| S-8 | Historienverzeichnis mit Standardrechten | Niedrig, **erledigt** |
 | S-9 | Workspace enthält `.git` (Hooks) | Mittel |
 | S-10 | Docs-Hosts im Runtime-Netz als Abflusskanal | Niedrig |
 | S-11 | Bindings sind host-global | Niedrig |
@@ -211,7 +211,7 @@ Die Download-Hosts in `project-tools.yaml` müssen zu den Tools in `mise.sandbox
 
 ### I-1 Name per `sed` aus YAML gelesen (Hoch) [V] — ERLEDIGT
 
-Erledigt in `sbx-env.sh`: `sed` entfernt Anführungszeichen und Kommentar, der Name wird per Regex validiert (`..`, `.`, `/` werden abgelehnt). Mit Stub-`sbx` getestet. Die vollständige Lösung ohne `sed` bleibt I-3.
+Erledigt in `sbx-env.sh`: `sed` entfernt Anführungszeichen und Kommentar, der Name wird per Regex validiert (`..`, `.`, `/` werden abgelehnt). Mit Stub-`sbx` getestet. Inzwischen abgelöst (I-3): Der Name kommt aus dem Env-Arg `sandboxName` mit `pattern`, das `sed`-Parsen ist entfernt.
 
 `name=$(sed -n 's/^name: *//p' sbxenv.yaml | head -n 1)` versteht kein YAML.
 
@@ -230,11 +230,13 @@ Empfehlung: Den Namen validieren (`[[ $name =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]`,
 
 ### I-2 `--name`-Override trennt Sandbox-Name und Historien-Ordner (Mittel) [V] — ERLEDIGT
 
-Erledigt in `sbx-env.sh`: `--name <x>` und `--name=<x>` (vor einem `--`) bestimmen auch den Historien-Ordner. Mit Stub-`sbx` getestet.
+Erledigt: Das Skript lehnt `--name` ab (getestet mit Stub-`sbx`). Der Name kommt über `--env-arg sandboxName=<x>` und bestimmt Sandbox und Historien-Ordner gemeinsam.
 
 `sbx env run --name other` benennt die Sandbox um, aber `historyDir` bleibt `…/proj`. Zwei Sandboxen mit verschiedenen `--name` teilen sich so denselben Ordner. Das ist genau der Fall, den die README verbietet („Sandboxen dürfen sich keinen Ordner teilen“, eigene SQLite-DB pro Server). Die Docs nennen `--name` ausdrücklich als Standardflag. Das Skript sollte `--name` auswerten oder ablehnen.
 
-### I-3 Wrapper-Skript statt sbx-Mitteln (Mittel)
+### I-3 Wrapper-Skript statt sbx-Mitteln (Mittel) — TEILWEISE ERLEDIGT
+
+Erledigt: Historien-Ordner anlegen und Config stagen laufen als `lifecycle.initialize` in `sbxenv.yaml`, sichtbar im Plan (auf dem Host bestätigt: der Befehl läuft, die Args sind aufgelöst). Das Skript setzt nur noch `historyRoot` und `hostConfigSrc` aus `$HOME` und ist ortsunabhängig (Arbeitsverzeichnis entscheidet). Offen: `host-mount@1`/`mounts:` sind nicht umgesetzt. Ohne das Skript müsste der absolute `$HOME`-Pfad per `--env-args-file` kommen.
 
 Das Skript erledigt Vorbereitung auf dem Host. Dafür gibt es in sbx eingebaute Wege:
 
@@ -257,7 +259,9 @@ Die Docs kennen den Weg „Built-in-Agent plus Mixins“ (`agent: opencode`, `ki
 - `@2` erlaubt Begrenzung nach Methode und Pfad (S-4, S-10). Das Kit nutzt `@1`.
 - Die Runtime-Einträge tragen `:443`, die Install-Einträge nicht. Laut `@2`-Spec werden „Port suffixes … ignored for allow-list membership“. Der Suffix schränkt vermutlich nichts ein, und die Schreibweise ist uneinheitlich. [?]
 
-### I-7 Args ohne `pattern` (Niedrig)
+### I-7 Args ohne `pattern` (Niedrig) — TEILWEISE ERLEDIGT
+
+Erledigt: Die Args in `sbxenv.yaml` (`sandboxName`, `historyRoot`, `hostConfigSrc`) haben jetzt ein `pattern`. Offen: `name` in `llm-provider.yaml`.
 
 - `sbxenv.yaml`: `historyDir` und `hostConfigDir` haben kein `pattern`, zum Beispiel `^/.+`, obwohl die Docs `pattern` kennen.
 - `llm-provider.yaml`: `name` hat kein `pattern` und wird als `"${{ kit.args.name }}"` in den TS-Quelltext gesetzt. Ein `"` im Namen bricht das Plugin. Die Quelle ist die schreibgeschützte `sbxenv.yaml`, daher kein Angriff, aber ein Robustheitsfehler.
@@ -265,7 +269,7 @@ Die Docs kennen den Weg „Built-in-Agent plus Mixins“ (`agent: opencode`, `ki
 
 ### I-8 Kopie mit `cp -RL` / Rechte der Kopie (Hoch) [V] — ERLEDIGT
 
-Erledigt: `chmod -R u+w` vor dem Löschen in `sbx-env.sh` und im Hook von `opencode-config.yaml`. Nicht auf dem Host getestet. Die Symlink-Dereferenzierung durch `-L` bleibt (siehe S-6).
+Erledigt: `chmod -R u+w` vor dem Löschen im `initialize`-Befehl von `sbxenv.yaml` (früher in `sbx-env.sh`) und im Hook von `opencode-config.yaml`. Der Befehl lief auf dem Host durch, ein zweiter Lauf bei Nix-verwalteter Config ist nicht ausdrücklich bestätigt. Die Symlink-Dereferenzierung durch `-L` bleibt (siehe S-6).
 
 `cp -RL` übernimmt die Rechtebits der Quelle. Bei schreibgeschützten Quellen, die etwa Nix/Home-Manager erzeugt (Dateien `444`, Verzeichnisse `555`), sind auch Staging-Kopien schreibgeschützt.
 
@@ -293,7 +297,9 @@ Außerdem dereferenziert `-L` Symlinks: Ein Symlink in `skills/` kopiert dessen 
 - Install-Netz ist nur während des Erstellens offen (Phase `install`).
 - Jede Sandbox hat ihre eigene Historie.
 
-### S-1 `sbx-env.sh` läuft auf dem Host und ist für den Agenten beschreibbar (Hoch) [D]
+### S-1 `sbx-env.sh` läuft auf dem Host und ist für den Agenten beschreibbar (Hoch) [D] — TEILWEISE ERLEDIGT
+
+Erledigt: Die Host-Logik liegt in `lifecycle.initialize` und wird im Plan genehmigt. Das Skript setzt nur noch zwei Env-Args und ist ortsunabhängig, es kann also außerhalb des Workspace liegen. Offen: Es liegt weiterhin im Workspace und läuft ohne Plan. `kits/` bleibt im Workspace (S-2).
 
 Der Workspace ist der Ordner mit `sbxenv.yaml`, also liegen `sbx-env.sh`, `kits/` und `mise.sandbox.toml` im beschreibbaren Mount. Der Agent kann `sbx-env.sh` ändern, und der Nutzer führt es beim nächsten Start **auf dem Host mit seinen Rechten** aus. Es gibt dafür kein Gate und keinen Plan.
 
@@ -337,7 +343,9 @@ Empfehlung: Standardquelle ist ein eigenes Verzeichnis (zum Beispiel `~/.config/
 
 `docker.io/sbx/shell:latest`, `…/opencode-mixin:latest` und `…/mise:latest` sind unpinned. Docs: „A latest tag can move to a kit that needs a later sbx release“, und für Reproduzierbarkeit „pin with an immutable tag or digest“. Ein geänderter Mixin kann Netz, Credentials und Hooks ändern, und das ohne Änderung an diesem Repo. Empfehlung: Digest oder feste Version nutzen. Optional `sbx settings set kit.requireSignature true` mit `kit.trustedSigners`.
 
-### S-8 Historienverzeichnis mit Standardrechten (Niedrig) [V]
+### S-8 Historienverzeichnis mit Standardrechten (Niedrig) [V] — ERLEDIGT
+
+Erledigt: Der `initialize`-Befehl setzt `umask 077`, die Ordner entstehen mit `700` (im Test bestätigt).
 
 `mkdir -p` legt `~/.sbx-history/<name>` mit `755` an (im Test bestätigt). Die Historie enthält Gesprächsverläufe und Tool-Ausgaben und kann Geheimnisse enthalten. Auf einem Mehrbenutzer-Host wäre sie lesbar. `umask 077` oder `chmod 700` im Skript genügt.
 
@@ -358,7 +366,7 @@ Laut Docs sind Credential-Bindings global und bleiben nach `sbx env rm` bestehen
 ## Priorisierte Empfehlung
 
 1. ~~**I-8:** Rechte nach dem Kopieren und vor dem Löschen korrigieren (Skript und Kit-Hook). Ohne das startet die Sandbox beim zweiten Mal nicht.~~ Erledigt.
-2. **S-1/S-2:** `sbx-env.sh` und `kits/` aus dem beschreibbaren Workspace nehmen oder die Host-Logik nach `lifecycle.initialize` verlegen (I-3).
+2. **S-1/S-2:** Host-Logik nach `lifecycle.initialize` verlegt (I-3). Skript nur noch dünn, `kits/` weiter im Workspace. Teilweise erledigt, siehe oben.
 3. ~~**I-1/I-2:** Den Namen validieren und `--name` berücksichtigen. Das verhindert den Totalverlust der Historien.~~ Erledigt.
 4. **S-6:** Dediziertes Config-Verzeichnis als Standard, Host-Config als Opt-in.
 5. **W-1/W-2:** Env-Args als einzige Quelle für ID und Host. Allowlist nur im Staging.

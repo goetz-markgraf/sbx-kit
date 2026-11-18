@@ -11,7 +11,7 @@ capabilities:
     config:
       startup:
         # The source is mounted read-only by sbxenv.yaml (additionalWorkspaces,
-        # target must match). sbx-env.sh stages only the allowlisted names there.
+        # target must match). lifecycle.initialize in sbxenv.yaml stages only the allowlisted names there.
         # opencode.json and plugins/ are deliberately not copied: the provider
         # comes from kits/llm-provider.
         - command: |
