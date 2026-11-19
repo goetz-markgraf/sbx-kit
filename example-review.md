@@ -38,7 +38,7 @@ Hauptprobleme:
 | V-4 | Plugin ohne Fehlerbehandlung bei Netzfehlern und ohne Refresh | Mittel |
 | V-5 | Historie: Persistenz über Neuaufsetzen nicht belegt, SQLite auf Mount offen | Mittel |
 | V-6 | Netz „sehr restriktiv“ nur teilweise eingelöst | Mittel |
-| V-7 | Kein Kontext für den Agenten (`agent-context`) | Niedrig |
+| V-7 | Kein Kontext für den Agenten (`agent-context`) | Niedrig, **teilweise erledigt** |
 | V-8 | Mehrere Provider nicht möglich, nicht dokumentiert | Niedrig |
 | V-9 | README: Neu-Erstellen nach Tool-Änderung fehlt, „Verzeichnis kopieren“ mehrdeutig | Niedrig |
 | W-1 | Provider-ID/Host an drei Stellen dupliziert | Mittel |
@@ -134,7 +134,9 @@ Empfehlung: Arg `modelFilter` (Glob/Regex auf die ID) oder Allow-/Denylist. Meta
 
 Empfehlung: Die effektive Runtime-Allowlist in die README aufnehmen, zum Beispiel als Ausgabe von `sbx policy ls` nach einem Testlauf.
 
-### V-7 Kein Kontext für den Agenten (Niedrig)
+### V-7 Kein Kontext für den Agenten (Niedrig) — TEILWEISE ERLEDIGT
+
+Erledigt (anders als empfohlen): Ein Install-Hook in `kits/project-tools` schreibt eine globale `~/.config/opencode/AGENTS.md` mit Sandbox-Hinweis, Netzhinweis und der Liste der installierten Tools aus `mise ls`. Nicht per `agent-context`, weil das nur festen Text im Kit kennt und `mise.sandbox.toml` nicht lesen kann. Der Hook ist lokal mit Stub-`mise` getestet, in der Sandbox noch nicht. Offen: der idiomatische `agent-context@2`-Weg.
 
 Es gibt keine `agent-context`-Capability. Der Agent erfährt nicht, dass das Netz fast ganz gesperrt ist, dass Tools über `mise.sandbox.toml` kommen und dass `apt` und `npm -g` scheitern. Er verschwendet Schritte und versucht Workarounds. Docs: Kits können Anweisungen für den Agenten mitbringen (`agent-context@1`/`@2`, ab sbx 0.45/0.51).
 
@@ -236,7 +238,7 @@ Erledigt: Das Skript lehnt `--name` ab (getestet mit Stub-`sbx`). Der Name kommt
 
 ### I-3 Wrapper-Skript statt sbx-Mitteln (Mittel) — ERLEDIGT
 
-Erledigt, auf dem Host bestätigt (Sandbox wird erstellt): Historien-Ordner anlegen und Config stagen laufen als `lifecycle.initialize` in `sbxenv.yaml`, sichtbar im Plan. Das Wrapper-Skript `sbx-env.sh` ist entfernt. `historyRoot` kommt aus `~/.sbxenv.yaml`, die `--name`-Sperre ist ein Check im `initialize`-Befehl (`SBX_SANDBOX_NAME`). Der `--name`-Check selbst ist nicht ausdrücklich getestet. Nicht umgesetzt: `host-mount@1`/`mounts:`.
+Erledigt, auf dem Host bestätigt (Sandbox wird erstellt): Historien-Ordner anlegen und Config stagen laufen als `lifecycle.initialize` in `sbxenv.yaml`, sichtbar im Plan. Das Wrapper-Skript `sbx-env.sh` ist entfernt. `historyRoot` kommt aus `~/.sbxenv.yaml`, die `--name`-Sperre ist ein Check im `initialize`-Befehl (`SBX_SANDBOX_NAME`). Der Check selbst ist auf dem Host bestätigt: `--name` wird abgewiesen, `--env-arg sandboxName=<x>` funktioniert. Nicht umgesetzt: `host-mount@1`/`mounts:`.
 
 Das Skript erledigt Vorbereitung auf dem Host. Dafür gibt es in sbx eingebaute Wege:
 
@@ -387,7 +389,7 @@ Laut Docs sind Credential-Bindings global und bleiben nach `sbx env rm` bestehen
 ## Auf dem Host zu testen [?]
 
 - Zweiter `sbx env run` bei Nix-verwalteter Config (I-8, Fix umgesetzt, noch nicht getestet).
-- `--name` bricht den `initialize`-Befehl ab (I-2/I-3, noch nicht getestet).
+- Globale `AGENTS.md` mit Tool-Liste in der Sandbox: Datei vorhanden, Format von `mise ls`, keine Überschreibung durch den Mixin (V-7).
 - Session überlebt `rm` und Neuerstellen, SQLite auf dem Mount (V-5).
 - Effektive Runtime-Allowlist per `sbx policy ls` (V-6).
 - Wirkung von `:443`, ob `@2`-Pfadgrenzen die Key-Injektion beeinflussen (I-6, S-4).

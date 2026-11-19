@@ -72,3 +72,33 @@ capabilities:
           user: "1000"
           env: [WORKSPACE_DIR, HTTP_PROXY, HTTPS_PROXY, NO_PROXY]
           description: Trust and install the tools listed in the workspace's mise config
+        # Global opencode instructions: the sandbox and the installed tools.
+        # The project's own AGENTS.md stays untouched. Never fails the install.
+        - command: |
+            export HOME="${HOME:-/home/agent}"
+            export MISE_OVERRIDE_CONFIG_FILENAMES="${{ kit.args.configFile }}"
+            file="$HOME/.config/opencode/AGENTS.md"
+            mkdir -p "$HOME/.config/opencode"
+            cd "$WORKSPACE_DIR" || exit 0
+            tools=$(/usr/local/bin/mise ls --current --no-header 2>/dev/null | awk '{print "- " $1 " " $2}')
+            [ -f "$file" ] && sed -i '/<!-- sbx-tools:begin -->/,/<!-- sbx-tools:end -->/d' "$file"
+            cat >> "$file" <<'EOF'
+            <!-- sbx-tools:begin -->
+            # Sandbox environment
+
+            You run inside a Docker sandbox (Linux microVM), not on the user's computer.
+
+            - The network is restricted. Only the model API and a few documentation hosts are reachable. A blocked request is not a bug in the project.
+            - Do not try to install software with apt or `npm -g`. Tools come from the sandbox's mise config and are installed once when the sandbox is created.
+            - To see the tools: `mise ls`. Changing the tool list needs a new sandbox, so ask the user.
+            - Project instructions are in the project's own AGENTS.md, if there is one.
+
+            Tools installed by mise (name, version):
+
+            EOF
+            printf '%s\n' "${tools:-- none}" >> "$file"
+            printf '<!-- sbx-tools:end -->\n' >> "$file"
+            exit 0
+          user: "1000"
+          env: [WORKSPACE_DIR]
+          description: Write the sandbox and tool overview into the global opencode AGENTS.md

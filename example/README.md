@@ -86,6 +86,7 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
   - `opencode.json`, damit der Host-Provider nicht mit dem Plugin kollidiert und keine Hinweise auf Keys mitkommen.
   - `plugins/`, weil sie Netzfreigaben bräuchten.
   - In `cli.json` fällt `plugins` weg.
+- **Sandbox-Hinweis für den Agenten:** Der letzte Install-Hook von `kits/project-tools` schreibt nach dem `mise install` einen Abschnitt in die globale `~/.config/opencode/AGENTS.md` der Sandbox. Er sagt, dass der Agent in einer Sandbox mit eingeschränktem Netz läuft, und listet die installierten Tools (`mise ls`, also die tatsächlich installierten Versionen aus `mise.sandbox.toml`). Die `AGENTS.md` des Projekts bleibt unberührt, opencode liest beide. Der Text steht im Hook und lässt sich dort anpassen.
 - **Modellliste:** Das Plugin `~/.config/opencode/plugins/requesty.ts` fragt beim Start `/v1/models` ab und registriert den Provider bei opencode.
 - **Historie:** `~/.sbx-history/<name>/` ist als `~/.local/share/opencode` gemountet. Jede Sandbox hat einen eigenen Ordner, weil jede ihren eigenen opencode-Server mit eigener SQLite-DB startet. Sandboxen dürfen sich keinen Ordner teilen. `sbx` expandiert weder `~` noch `$HOME` in `sbxenv.yaml`. Deshalb steht `historyRoot` in `~/.sbxenv.yaml`. Anlegen und Befüllen der Ordner macht der `initialize`-Befehl (Historie-Ordner mit Rechten `700`).
 
@@ -112,6 +113,7 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
 
 ## Ungeprüft
 
+- Der Hook, der die globale `AGENTS.md` mit Sandbox-Hinweis und Tool-Liste schreibt: Der Textblock und die Wiederholung wurden lokal mit einem Stub-`mise` getestet. In der Sandbox ist offen, ob `mise ls --current` das erwartete Format liefert, ob der Hook das Verzeichnis `~/.config/opencode` schreiben darf (der opencode-Mixin setzt dessen Besitzer in einem eigenen Hook) und ob der Mixin die Datei später überschreibt. Schlägt das Schreiben fehl, bricht der Hook das Erstellen nicht ab. Die Datei fehlt dann.
 - Die Umstellung auf `~/.sbxenv.yaml` (ohne Wrapper-Skript): ob `args` aus der Home-Datei mit den `args` im Projekt zusammengeführt werden, `${{ env.args.historyRoot }}` darin aufgelöst wird und was sbx ausgibt, wenn die Datei fehlt. Außerdem, ob `SBX_SANDBOX_NAME` im `initialize`-Befehl bei `--name` vom Arg `sandboxName` abweicht, so dass der Befehl abbricht.
 - Der neue `lifecycle.initialize`-Block: ob sbx `${{ env.args.* }}` und die Patterns darin wie dokumentiert auflöst, `name: ${{ env.args.sandboxName }}` funktioniert und der Plan den Befehl anzeigt. Der Befehl läuft ohne sbx nur als Shell-Test.
 - Ob die Rechte `700` des Staging-Ordners dem Mount in der VM nichts verbauen (Lesezugriff des `agent`-Users).
