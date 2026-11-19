@@ -23,7 +23,7 @@ Das Konzept ist solide und nah an den sbx-Idiomen: Kits als Mixins, proxy-verwal
 Hauptprobleme:
 
 1. ~~`sbx-env.sh` bricht ab dem **zweiten Start** ab, wenn die Host-Config schreibgeschützt ist (typisch bei Nix). [V]~~ Erledigt (I-8).
-2. `sbx-env.sh` und `kits/` liegen im vom Agenten beschreibbaren Workspace. `sbx-env.sh` läuft ungeprüft auf dem Host. [D] Teilweise erledigt (I-3, S-1): Die Host-Logik liegt jetzt in `lifecycle.initialize`. Das dünne Skript und `kits/` bleiben im Workspace.
+2. ~~`sbx-env.sh` läuft ungeprüft auf dem Host.~~ Erledigt (I-3, S-1): Die Host-Logik liegt in `lifecycle.initialize`, das Skript ist entfernt. Offen bleibt nur `kits/` im beschreibbaren Workspace (S-2).
 3. ~~Die Namensableitung per `sed` ist fragil. Ein Name wie `..` löscht alle Historien. [V]~~ Erledigt (I-1, I-2).
 4. Das Feature „Provider austauschbar“ ist nur für OpenAI-kompatible APIs mit `Authorization: Bearer` erfüllt.
 5. Provider-ID und Host stehen an mehreren Stellen. Die Allowlist der Config steht dreifach vor.
@@ -52,18 +52,18 @@ Hauptprobleme:
 | W-9 | Nicht pinnbare/ungepinnte Versionen (`latest`) | Mittel |
 | I-1 | Name per `sed` aus YAML gelesen | Hoch, **erledigt** |
 | I-2 | `--name`-Override trennt Sandbox-Name und Historien-Ordner | Mittel, **erledigt** |
-| I-3 | Wrapper-Skript statt sbx-Mitteln (`lifecycle`, `mounts`, `host-mount@1`) | Mittel, **teilweise erledigt** |
+| I-3 | Wrapper-Skript statt sbx-Mitteln (`lifecycle`, `mounts`, `host-mount@1`) | Mittel, **erledigt** |
 | I-4 | `shell`-Workload plus `opencode-mixin` statt `agent: opencode` | Frage |
 | I-5 | `workload` doppelt: `agent: shell` und `sbx/shell` in `kits` | Niedrig |
 | I-6 | `network-policy@1` statt `@2`, `:443`-Suffix mit unklarer Wirkung | Niedrig |
 | I-7 | `args` ohne `pattern` für Pfade, `name` ohne `pattern` | Niedrig, **teilweise erledigt** |
 | I-8 | Kopie mit `cp -RL` / Rechte der Kopie | Hoch, **erledigt** |
-| S-1 | `sbx-env.sh` läuft auf dem Host und ist für den Agenten beschreibbar | Hoch, **teilweise erledigt** |
+| S-1 | `sbx-env.sh` läuft auf dem Host und ist für den Agenten beschreibbar | Hoch, **erledigt** |
 | S-2 | `kits/` im beschreibbaren Workspace | Mittel |
 | S-3 | `git diff` als Prüfmittel ist selbst angreifbar | Mittel |
 | S-4 | Credential kann im ganzen API-Host genutzt werden | Mittel |
 | S-5 | Deny-all fragt nach, statt hart zu sperren | Mittel |
-| S-6 | Host-`AGENTS.md`/Skills landen ungeprüft in der Sandbox | Mittel, **weitgehend erledigt** |
+| S-6 | Host-`AGENTS.md`/Skills landen ungeprüft in der Sandbox | Mittel, **erledigt** |
 | S-7 | `:latest`-Kits ohne Pinning oder Signatur | Mittel |
 | S-8 | Historienverzeichnis mit Standardrechten | Niedrig, **erledigt** |
 | S-9 | Workspace enthält `.git` (Hooks) | Mittel |
@@ -234,9 +234,9 @@ Erledigt: Das Skript lehnt `--name` ab (getestet mit Stub-`sbx`). Der Name kommt
 
 `sbx env run --name other` benennt die Sandbox um, aber `historyDir` bleibt `…/proj`. Zwei Sandboxen mit verschiedenen `--name` teilen sich so denselben Ordner. Das ist genau der Fall, den die README verbietet („Sandboxen dürfen sich keinen Ordner teilen“, eigene SQLite-DB pro Server). Die Docs nennen `--name` ausdrücklich als Standardflag. Das Skript sollte `--name` auswerten oder ablehnen.
 
-### I-3 Wrapper-Skript statt sbx-Mitteln (Mittel) — TEILWEISE ERLEDIGT
+### I-3 Wrapper-Skript statt sbx-Mitteln (Mittel) — ERLEDIGT
 
-Erledigt: Historien-Ordner anlegen und Config stagen laufen als `lifecycle.initialize` in `sbxenv.yaml`, sichtbar im Plan (auf dem Host bestätigt: der Befehl läuft, die Args sind aufgelöst). Das Skript setzt nur noch `historyRoot` und `hostConfigSrc` aus `$HOME` und ist ortsunabhängig (Arbeitsverzeichnis entscheidet). Offen: `host-mount@1`/`mounts:` sind nicht umgesetzt. Ohne das Skript müsste der absolute `$HOME`-Pfad per `--env-args-file` kommen.
+Erledigt, auf dem Host bestätigt (Sandbox wird erstellt): Historien-Ordner anlegen und Config stagen laufen als `lifecycle.initialize` in `sbxenv.yaml`, sichtbar im Plan. Das Wrapper-Skript `sbx-env.sh` ist entfernt. `historyRoot` kommt aus `~/.sbxenv.yaml`, die `--name`-Sperre ist ein Check im `initialize`-Befehl (`SBX_SANDBOX_NAME`). Der `--name`-Check selbst ist nicht ausdrücklich getestet. Nicht umgesetzt: `host-mount@1`/`mounts:`.
 
 Das Skript erledigt Vorbereitung auf dem Host. Dafür gibt es in sbx eingebaute Wege:
 
@@ -297,9 +297,9 @@ Außerdem dereferenziert `-L` Symlinks: Ein Symlink in `skills/` kopiert dessen 
 - Install-Netz ist nur während des Erstellens offen (Phase `install`).
 - Jede Sandbox hat ihre eigene Historie.
 
-### S-1 `sbx-env.sh` läuft auf dem Host und ist für den Agenten beschreibbar (Hoch) [D] — TEILWEISE ERLEDIGT
+### S-1 `sbx-env.sh` läuft auf dem Host und ist für den Agenten beschreibbar (Hoch) [D] — ERLEDIGT
 
-Erledigt: Die Host-Logik liegt in `lifecycle.initialize` und wird im Plan genehmigt. Das Skript setzt nur noch zwei Env-Args und ist ortsunabhängig, es kann also außerhalb des Workspace liegen. Offen: Es liegt weiterhin im Workspace und läuft ohne Plan. `kits/` bleibt im Workspace (S-2).
+Erledigt: Die Host-Logik liegt in `lifecycle.initialize` und wird im Plan genehmigt. `sbx-env.sh` ist entfernt, es gibt keinen ungeprüften Host-Code mehr im Workspace. `kits/` bleibt im Workspace, siehe S-2.
 
 Der Workspace ist der Ordner mit `sbxenv.yaml`, also liegen `sbx-env.sh`, `kits/` und `mise.sandbox.toml` im beschreibbaren Mount. Der Agent kann `sbx-env.sh` ändern, und der Nutzer führt es beim nächsten Start **auf dem Host mit seinen Rechten** aus. Es gibt dafür kein Gate und keinen Plan.
 
@@ -329,9 +329,9 @@ Empfehlungen:
 
 Nach den Docs wird bei `balanced` und `deny-all` ein Request ohne passende Regel „blocked and asks for your approval“, nicht hart abgelehnt. Die README sagt „Standard ist alles gesperrt“. Wer Rückfragen schnell bestätigt, öffnet das Netz Stück für Stück. Harte Sperren gehen nur über Deny-Regeln. Die Vorbedingung `sbx policy init deny-all` ist außerdem global und wird nicht geprüft. Mindestens sollte die README das genau beschreiben und raten, Rückfragen nie reflexartig zu bestätigen.
 
-### S-6 Host-`AGENTS.md`/Skills landen ungeprüft in der Sandbox (Mittel) — TEILWEISE ERLEDIGT
+### S-6 Host-`AGENTS.md`/Skills landen ungeprüft in der Sandbox (Mittel) — ERLEDIGT
 
-Erledigt: `AGENTS.md`, `agents/`, `commands/` und `skills/` werden nicht mehr gestaged (Entscheidung des Autors: Projekte bringen eigene mit). Es bleiben nur `cli.json` und `themes/`. Damit entfällt auch `SBX_OPENCODE_CONFIG`. Offen: Symlink-Dereferenzierung (`cp -L`) für die beiden verbleibenden Einträge.
+Erledigt: `AGENTS.md`, `agents/`, `commands/` und `skills/` werden nicht mehr gestaged (Entscheidung des Autors: Projekte bringen eigene mit). Es bleiben nur `cli.json` und `themes/`. Damit entfällt auch `SBX_OPENCODE_CONFIG`. Die Symlink-Dereferenzierung (`cp -L`) gilt nur noch für diese beiden Einträge.
 
 Standardquelle ist die komplette Host-Config (`~/.config/opencode`) mit Allowlist nach Namen, nicht nach Inhalt. Sie enthält zum Beispiel:
 
@@ -368,9 +368,9 @@ Laut Docs sind Credential-Bindings global und bleiben nach `sbx env rm` bestehen
 ## Priorisierte Empfehlung
 
 1. ~~**I-8:** Rechte nach dem Kopieren und vor dem Löschen korrigieren (Skript und Kit-Hook). Ohne das startet die Sandbox beim zweiten Mal nicht.~~ Erledigt.
-2. **S-1/S-2:** Host-Logik nach `lifecycle.initialize` verlegt (I-3). Skript nur noch dünn, `kits/` weiter im Workspace. Teilweise erledigt, siehe oben.
+2. ~~**S-1:** Host-Logik nach `lifecycle.initialize` verlegen, Skript entfernen.~~ Erledigt (I-3). **S-2:** `kits/` liegt weiter im Workspace, offen.
 3. ~~**I-1/I-2:** Den Namen validieren und `--name` berücksichtigen. Das verhindert den Totalverlust der Historien.~~ Erledigt.
-4. **S-6:** Dediziertes Config-Verzeichnis als Standard, Host-Config als Opt-in.
+4. ~~**S-6:** Dediziertes Config-Verzeichnis als Standard, Host-Config als Opt-in.~~ Erledigt: Nur `cli.json` und `themes/` werden gestaged.
 5. **W-1/W-2:** Env-Args als einzige Quelle für ID und Host. Allowlist nur im Staging.
 6. **V-1/V-2/V-4:** Auth-Header als Arg, Modellfilter, Fehlerbehandlung im Plugin.
 7. **W-9/S-7:** Versionen und Kits pinnen.
@@ -380,13 +380,14 @@ Laut Docs sind Credential-Bindings global und bleiben nach `sbx env rm` bestehen
 ## Offene Fragen an den Autor
 
 - Warum `shell`-Workload mit überschriebenem Entrypoint statt `agent: opencode` (I-4)?
-- Soll die Host-Config Standard oder Opt-in sein (S-6)?
+- ~~Soll die Host-Config Standard oder Opt-in sein (S-6)?~~ Beantwortet: Nur `cli.json` und `themes/` kommen mit.
 - Reicht ein Provider pro Sandbox (V-8)?
 - Sollen Kits und Skript außerhalb des Workspace liegen, auch wenn „Verzeichnis in die Projektwurzel kopieren“ dann nicht mehr gilt (S-1)?
 
 ## Auf dem Host zu testen [?]
 
-- Zweiter `./sbx-env.sh run` bei Nix-verwalteter Config (I-8, Fix umgesetzt, noch nicht getestet).
+- Zweiter `sbx env run` bei Nix-verwalteter Config (I-8, Fix umgesetzt, noch nicht getestet).
+- `--name` bricht den `initialize`-Befehl ab (I-2/I-3, noch nicht getestet).
 - Session überlebt `rm` und Neuerstellen, SQLite auf dem Mount (V-5).
 - Effektive Runtime-Allowlist per `sbx policy ls` (V-6).
 - Wirkung von `:443`, ob `@2`-Pfadgrenzen die Key-Injektion beeinflussen (I-6, S-4).

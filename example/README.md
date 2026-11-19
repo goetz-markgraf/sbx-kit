@@ -7,7 +7,6 @@ Eine Sandbox mit opencode, Requesty (EU-Router) als Modellquelle und projektspez
 ```
 example/                             # Workspace und Startverzeichnis
 ├── sbxenv.yaml                      # Konfiguration der Sandbox
-├── sbx-env.sh                       # dünner Wrapper: übergibt nur die $HOME-Pfade an sbx env
 ├── mise.sandbox.toml                # Dev-Tools dieses Projekts
 └── kits/
     ├── llm-provider/                # Mixin: Credential, Netz, opencode-Plugin
@@ -42,15 +41,24 @@ Die Kits haben kein Dockerfile. Alles steht im Descriptor.
    sbx settings set env.rememberHostCommands true
    ```
    Ohne diese Einstellung verlangt sbx bei jedem `run` eine Genehmigung des Plans, weil `sbxenv.yaml` einen Host-Befehl (`lifecycle.initialize`) enthält. Mit ihr fragt sbx nur beim ersten Start und wenn sich der Befehl ändert. Die Einstellung gilt für alle Umgebungen auf dem Host.
-3. 1Password CLI (`op`) installieren und anmelden. Das Verzeichnis muss als absoluter Pfad im `PATH` stehen.
-4. Starten:
-   ```sh
-   ./sbx-env.sh plan
-   ./sbx-env.sh run
+3. 1Password CLI (`op`) installieren und anmelden. Das Verzeichnis von `op` muss als absoluter Pfad im `PATH` stehen.
+4. Persönliche Defaults anlegen: `~/.sbxenv.yaml` mit dem absoluten Pfad der Historie. sbx expandiert `~` und `$HOME` in `sbxenv.yaml` nicht, deshalb steht der Pfad hier:
+   ```yaml
+   schemaVersion: "1"
+   args:
+     historyRoot:
+       default: /Users/<du>/.sbx-history
+       pattern: "/[^']+"
    ```
-   Das Skript ist ortsunabhängig. Entscheidend ist das aktuelle Verzeichnis: Es muss `sbxenv.yaml` enthalten. Das Skript kann daher auch an anderer Stelle liegen, zum Beispiel im `PATH`, und wird dann als `sbx-env.sh run` aus dem Projektordner gestartet.
-5. `run` startet direkt opencode. Eine Shell gibt es mit `./sbx-env.sh run -- bash`.
-6. Entfernen: `./sbx-env.sh rm`. Die Historie bleibt erhalten.
+   Fehlt die Datei, bricht sbx ab, weil `historyRoot` nicht deklariert ist. Die Fehlermeldung kommt von sbx und lässt sich aus dem Projekt nicht anpassen. Dann diese Datei anlegen. Wichtig: Wer `sbx env` einen Pfad übergibt, überspringt `~/.sbxenv.yaml`. Immer ohne Pfad aus dem Projektordner starten.
+5. Starten:
+   ```sh
+   sbx env plan
+   sbx env run
+   ```
+   Entscheidend ist das aktuelle Verzeichnis: Es muss `sbxenv.yaml` enthalten.
+6. `run` startet direkt opencode. Eine Shell gibt es mit `sbx env run -- bash`.
+7. Entfernen: `sbx env rm`. Die Historie bleibt erhalten.
 
 Den Requesty-Key holt sbx aus `op://Employee/RequestyApiKey/password`. Er liegt nicht in der Datei.
 
@@ -58,7 +66,7 @@ Den Requesty-Key holt sbx aus `op://Employee/RequestyApiKey/password`. Er liegt 
 
 Das Verzeichnis kopieren und in die Projektwurzel legen. Dann anpassen:
 
-- **Name:** `sandboxName` (Default der `args` in `sbxenv.yaml`) oder `./sbx-env.sh run --env-arg sandboxName=<x>`. Er bestimmt Sandbox und Historie-Ordner. `--name` lehnt das Skript ab.
+- **Name:** `sandboxName` (Default der `args` in `sbxenv.yaml`) oder `sbx env run --env-arg sandboxName=<x>`. Er bestimmt Sandbox und Historie-Ordner. `--name` bricht der `initialize`-Befehl ab.
 - **Umgebungsvariablen:** `env:` in `sbxenv.yaml`, z. B. `EDITOR: vim`. Änderungen gelten ab dem nächsten `run`, ohne die Sandbox neu zu erstellen.
 - **Dev-Tools:** `mise.sandbox.toml` bearbeiten. Für neue Download-Hosts `install.allow` in `kits/project-tools/project-tools.yaml` ergänzen. Fehlen einem Tool Systembibliotheken (z. B. `libatomic1` für Node), das apt-Paket im ersten Install-Hook ergänzen.
 - **Provider:** In `sbxenv.yaml` die `args` des `llm-provider`-Kits setzen. Dazu `secrets` und `bindings` mit demselben `id` und `host` anlegen. `defaultModel` ist optional. Ohne Angabe trägt ein Startup-Hook das erste Modell der `/v1/models`-Liste als `model` in `~/.config/opencode/opencode.json` ein, aber nur solange dort noch keins steht. Mit `defaultModel` (ID ohne Provider-Präfix) wählst du ein bestimmtes.
@@ -79,21 +87,20 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
   - `plugins/`, weil sie Netzfreigaben bräuchten.
   - In `cli.json` fällt `plugins` weg.
 - **Modellliste:** Das Plugin `~/.config/opencode/plugins/requesty.ts` fragt beim Start `/v1/models` ab und registriert den Provider bei opencode.
-- **Historie:** `~/.sbx-history/<name>/` ist als `~/.local/share/opencode` gemountet. Jede Sandbox hat einen eigenen Ordner, weil jede ihren eigenen opencode-Server mit eigener SQLite-DB startet. Sandboxen dürfen sich keinen Ordner teilen. `sbx` expandiert weder `~` noch `$HOME` in `sbxenv.yaml`. Deshalb übergibt `sbx-env.sh` `historyRoot` als Env-Arg. Anlegen und Befüllen der Ordner macht der `initialize`-Befehl (Historie-Ordner mit Rechten `700`).
+- **Historie:** `~/.sbx-history/<name>/` ist als `~/.local/share/opencode` gemountet. Jede Sandbox hat einen eigenen Ordner, weil jede ihren eigenen opencode-Server mit eigener SQLite-DB startet. Sandboxen dürfen sich keinen Ordner teilen. `sbx` expandiert weder `~` noch `$HOME` in `sbxenv.yaml`. Deshalb steht `historyRoot` in `~/.sbxenv.yaml`. Anlegen und Befüllen der Ordner macht der `initialize`-Befehl (Historie-Ordner mit Rechten `700`).
 
 ## Schutz der Konfiguration
 
 - `sbxenv.yaml` liegt im Workspace-Root. sbx mountet sie dort schreibgeschützt.
 - Alle Host-Befehle stehen in `lifecycle.initialize` von `sbxenv.yaml`. Sie erscheinen im Plan und brauchen deine Zustimmung. Mit `env.rememberHostCommands` (siehe Vorbereitung) fragt sbx nur beim ersten Start und bei jeder Änderung des Befehls. Prüfe den Plan vor dem Bestätigen.
-- `sbx-env.sh` ist weiterhin für den Agenten schreibbar und läuft ohne Plan auf dem Host. Es setzt nur zwei Env-Args, kann aber jederzeit beliebigen Code enthalten. Restrisiko: Prüfe es vor dem Start oder lege es außerhalb des Workspace ab, zum Beispiel in `~/bin`.
-- `kits/` und `mise.sandbox.toml` sind schreibbar. Änderungen wirken erst beim nächsten Erstellen der Sandbox. Prüfe sie vorher mit `git diff` und dem Plan von `./sbx-env.sh plan`.
+- `kits/` und `mise.sandbox.toml` sind schreibbar. Änderungen wirken erst beim nächsten Erstellen der Sandbox. Prüfe sie vorher mit `git diff` und dem Plan von `sbx env plan`.
 
 ## Geprüft
 
 - mise lädt mit `MISE_OVERRIDE_CONFIG_FILENAMES` nur die genannte Datei (mise 2026.11.0, lokal getestet).
 - `mise trust` bleibt nach Änderungen der Datei gültig.
 - Der `initialize`-Befehl (Historie-Ordner anlegen, Config stagen) läuft in `sh` zweimal hintereinander durch, auch bei schreibgeschützter Quelle (Linux, GNU, lokal getestet).
-- `./sbx-env.sh plan` löst `workspace: .` und die Pfade der Args in `additionalWorkspaces.path` auf. Er akzeptiert absolute Pfade außerhalb des Workspaces und `readOnly: true`. (Vor der Umstellung auf `initialize` getestet, nicht erneut.)
+- `sbx env plan` löst `workspace: .` und die Pfade der Args in `additionalWorkspaces.path` auf. Er akzeptiert absolute Pfade außerhalb des Workspaces und `readOnly: true`. (Vor der Umstellung auf `initialize` getestet, nicht erneut.)
 - `jq` ist in der Sandbox installiert.
 - `MISE_OVERRIDE_CONFIG_FILENAMES=mise.sandbox.toml` steht im Container-Env (Kit-Arg mit `env:` funktioniert).
 - Die Tools aus `mise.sandbox.toml` liegen auf dem `PATH` (Java 21, Node 26).
@@ -105,6 +112,7 @@ Eine vorhandene `mise.toml` des Projekts wird in der Sandbox ignoriert. Nur `mis
 
 ## Ungeprüft
 
+- Die Umstellung auf `~/.sbxenv.yaml` (ohne Wrapper-Skript): ob `args` aus der Home-Datei mit den `args` im Projekt zusammengeführt werden, `${{ env.args.historyRoot }}` darin aufgelöst wird und was sbx ausgibt, wenn die Datei fehlt. Außerdem, ob `SBX_SANDBOX_NAME` im `initialize`-Befehl bei `--name` vom Arg `sandboxName` abweicht, so dass der Befehl abbricht.
 - Der neue `lifecycle.initialize`-Block: ob sbx `${{ env.args.* }}` und die Patterns darin wie dokumentiert auflöst, `name: ${{ env.args.sandboxName }}` funktioniert und der Plan den Befehl anzeigt. Der Befehl läuft ohne sbx nur als Shell-Test.
 - Ob die Rechte `700` des Staging-Ordners dem Mount in der VM nichts verbauen (Lesezugriff des `agent`-Users).
 - Das Startmodell: Ob der Startup-Hook von `llm-provider` die Modellliste abruft (Netz im Hook, Proxy-Umgebung, Zertifikat) und `model` in `opencode.json` einträgt. Schlägt der Abruf fehl, meldet der Hook das und lässt die Datei unverändert.

@@ -7,26 +7,32 @@ agent: shell
 workspace: .
 
 # Login shell so /etc/profile.d puts the mise tools on PATH for opencode.
-# `./sbx-env.sh run -- bash` opens a shell instead.
+# `sbx env run -- bash` opens a shell instead.
 entrypoint: [/bin/bash, -lc]
 cmd: ["exec opencode"]
 
 env:
   EDITOR: vim
 
-# historyRoot is set by sbx-env.sh. sbx does not expand $HOME or ~ in this
-# file. The patterns exclude ' because the values are inserted into
-# single-quoted host commands below. sandboxName becomes a
-# directory name that is used with rm -rf: no `..`, no `/`.
+# The arg historyRoot is deliberately NOT declared here. sbx does not expand
+# $HOME or ~ in this file, so it comes from ~/.sbxenv.yaml (see README):
+#
+#   schemaVersion: "1"
+#   args:
+#     historyRoot:
+#       default: /Users/<you>/.sbx-history
+#       pattern: "/[^']+"
+#
+# Without that file sbx fails because historyRoot is unknown. Do not pass a
+# file path to `sbx env`: that skips ~/.sbxenv.yaml.
+# sandboxName becomes a directory name that is used with rm -rf: no `..`,
+# no `/`. The patterns exclude ' because values are inserted into
+# single-quoted host commands below.
 args:
   sandboxName:
     default: requesty-test
     description: Sandbox name. Also names the history directory
     pattern: "[A-Za-z0-9]+([._-][A-Za-z0-9]+)*"
-  historyRoot:
-    required: true
-    description: Absolute host directory containing one opencode history directory per sandbox
-    pattern: "/[^']+"
 
 # Runs on the host and needs approval in the plan. Make sure it is safe to run
 # repeatedly. The config stage is the allowlist for what the sandbox sees:
@@ -37,6 +43,10 @@ lifecycle:
       command: |
         set -eu
         umask 077
+        if [ "$SBX_SANDBOX_NAME" != '${{ env.args.sandboxName }}' ]; then
+          echo "use --env-arg sandboxName=<x> instead of --name" >&2
+          exit 1
+        fi
         root='${{ env.args.historyRoot }}'
         src="$HOME/.config/opencode"
         name='${{ env.args.sandboxName }}'
