@@ -52,17 +52,18 @@ bindings:
 # Projects without Requesty, or without need for it, delete the kit entry
 # and the `requesty-management` entries in secrets and bindings.
 #
-# The kit comes from a Git repository (or an OCI image) because ~ is not
-# expanded in this file. Replace <ORG>/<REPO> and pin a commit. Remote
-# sources other than Docker Hub need:
-#   sbx settings set kit.allowedSources '["docker.io/","github.com/<ORG>/"]'
-# To try it from this repository, use the local path
-# ../example_home/.sbx-kit/requesty-plugin instead.
+# The kit lives centrally in ~/.sbx-kit, but this project opts in. Neither ~
+# nor $HOME nor ${HOME} is resolved here (tested), so use the ABSOLUTE path
+# of your home directory (replace /Users/dragon). Alternative that does not
+# depend on a user name: a Git source (needs `sbx settings set
+# kit.allowedSources ...`) or an OCI image:
+#   - source: "git+https://github.com/<ORG>/<REPO>.git#ref=<COMMIT>&dir=requesty-plugin"
 kits:
   - /Users/dragon/.sbx-kit/requesty-plugin
-#  - source: "git+https://github.com/<ORG>/<REPO>.git#ref=<COMMIT>&dir=requesty-plugin"
-#    args:
-#      options: '{"sidebar":{"showKeyName":true},"prompt":{"showKeyName":true}}'
+  # With plugin options:
+  # - source: /Users/dragon/.sbx-kit/requesty-plugin
+  #   args:
+  #     options: '{"sidebar":{"showKeyName":true},"prompt":{"showKeyName":true}}'
 
   # Optional project-specific kits (appended to the central ones). Paths are
   # relative to this file. Keep project kits small: they are writable by the
