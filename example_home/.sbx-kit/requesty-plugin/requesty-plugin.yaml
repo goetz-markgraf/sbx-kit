@@ -1,0 +1,162 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+displayName: Requesty budget plugin for opencode
+description: Installs the opencode-requesty-plugin (budget and spend in the TUI) and gives it a proxy-managed key for the Requesty management API. Opt-in per project by listing the kit.
+
+kind: mixin
+version: "1.0.0"
+
+args:
+  version:
+    default: "2.0.0"
+    pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'
+    description: Version of @christiangalsterer/opencode-requesty-plugin
+  options:
+    default: "{}"
+    pattern: "\\{[^']*\\}"
+    description: Plugin options as a JSON object (refreshIntervalMs, sidebar, prompt, dialog, ...)
+  service:
+    default: requesty-management
+    pattern: '^[a-z0-9-]+$'
+    description: Service name of the sbx secret. Must differ from the model provider's service
+  host:
+    default: api-v2.requesty.ai
+    pattern: '^[a-z0-9.-]+$'
+    description: Requesty management API host, the only destination the key is injected into
+  envName:
+    default: REQUESTY_API_KEY
+    pattern: '^[A-Z_][A-Z0-9_]*$'
+    description: Variable the plugin reads its key from (placeholder inside the sandbox). The plugin only knows REQUESTY_API_KEY, so the model provider must use another variable
+
+capabilities:
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      install:
+        allow:
+          - registry.npmjs.org
+      runtime:
+        allow:
+          - ${{ kit.args.host }}:443
+
+  - type: com.docker.sandbox/credential@1
+    config:
+      service: ${{ kit.args.service }}
+      phase: runtime
+      apiKey:
+        name: ${{ kit.args.envName }}
+        proxyManaged: true
+        inject:
+          - domain: ${{ kit.args.host }}
+            header: Authorization
+            format: "Bearer %s"
+
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      install:
+        # Install hooks run in kit order, and this kit's hooks come before
+        # the one in sbx/opencode-mixin that hands ~/.config/opencode to the
+        # agent. Until then the directory belongs to root and the hook below
+        # fails with EACCES. Non-recursive on purpose: ~/.config/opencode/skills
+        # can be a read-only mount.
+        - command: |
+            set -eu
+            for d in /home/agent/.config /home/agent/.config/opencode \
+                     /home/agent/.cache /home/agent/.cache/opencode \
+                     /home/agent/.local /home/agent/.local/bin; do
+              mkdir -p "$d"
+              chown agent:agent "$d"
+            done
+            if [ -e /home/agent/.config/opencode/cli.json ]; then
+              chown agent:agent /home/agent/.config/opencode/cli.json
+            fi
+          user: "0"
+          description: Make the agent's config and cache directories writable for the next hook
+
+        # Fetches the package while the install network is open, so the
+        # runtime needs no npm access, and writes a helper that registers the
+        # plugin in cli.json. A failure aborts the create on purpose: a
+        # sandbox without the plugin would otherwise show nothing.
+        # The helper is also run by the startup hook below.
+        - command: |
+            set -eu
+            export HOME="${HOME:-/home/agent}"
+            pkg='@christiangalsterer/opencode-requesty-plugin'
+            ver='${{ kit.args.version }}'
+
+            oc=
+            for c in "$(command -v opencode 2>/dev/null || true)" \
+                     "$HOME/.local/bin/opencode" "$HOME/.opencode/bin/opencode" \
+                     "$HOME/.local/share/mise/shims/opencode" /usr/local/bin/opencode; do
+              if [ -n "$c" ] && [ -x "$c" ]; then oc=$c; break; fi
+            done
+            if [ -z "$oc" ]; then
+              echo "requesty-plugin: opencode not found in PATH or the usual places; is sbx/opencode-mixin installed before this kit?" >&2
+              exit 1
+            fi
+            echo "requesty-plugin: using $oc"
+            "$oc" plugin add "$pkg@$ver" || { echo "requesty-plugin: opencode plugin add $pkg@$ver failed" >&2; exit 1; }
+            if ! ls -d "$HOME"/.cache/opencode/packages/@christiangalsterer/opencode-requesty-plugin* >/dev/null 2>&1; then
+              echo "requesty-plugin: warning: package not found under ~/.cache/opencode/packages"
+            fi
+
+            mkdir -p "$HOME/.local/bin"
+            cat > "$HOME/.local/bin/requesty-plugin-register" <<'SCRIPT'
+            #!/bin/sh
+            # Registers the plugin in ~/.config/opencode/cli.json (TUI plugins
+            # live there). Idempotent: replaces any earlier entry of the package.
+            set -eu
+            pkg='@christiangalsterer/opencode-requesty-plugin'
+            ver='${{ kit.args.version }}'
+            opts='${{ kit.args.options }}'
+            cli="$HOME/.config/opencode/cli.json"
+
+            if echo "$opts" | jq -e 'type == "object" and length == 0' >/dev/null 2>&1; then
+              entry=$(jq -n --arg p "$pkg@$ver" '$p')
+            elif echo "$opts" | jq -e 'type == "object"' >/dev/null 2>&1; then
+              entry=$(jq -n --arg p "$pkg" --argjson o "$opts" '{package: $p, options: $o}')
+            else
+              echo "requesty-plugin: options are not a JSON object: $opts" >&2
+              exit 1
+            fi
+
+            mkdir -p "$(dirname "$cli")"
+            [ -f "$cli" ] || echo '{}' > "$cli"
+            jq --arg p "$pkg" --argjson e "$entry" '
+              .plugins = ((.plugins // [])
+                | map(select((if type == "string" then . else (.package // "") end) | startswith($p) | not)))
+                + [$e]
+            ' "$cli" > "$cli.tmp" && mv "$cli.tmp" "$cli"
+
+            # `opencode plugin add` may also have registered the package in
+            # opencode.json; one registration is enough. Skipped when the file
+            # is not plain JSON.
+            oc_json="$HOME/.config/opencode/opencode.json"
+            if [ -f "$oc_json" ] && jq -e '(.plugins // []) | type == "array"' "$oc_json" >/dev/null 2>&1; then
+              jq --arg p "$pkg" '
+                if .plugins then .plugins |= map(select((if type == "string" then . else (.package // "") end) | startswith($p) | not)) else . end
+              ' "$oc_json" > "$oc_json.tmp" && mv "$oc_json.tmp" "$oc_json"
+            fi
+            echo "requesty-plugin: registered in $cli"
+            SCRIPT
+            chmod 0755 "$HOME/.local/bin/requesty-plugin-register"
+            "$HOME/.local/bin/requesty-plugin-register"
+          user: "1000"
+          env: [HTTP_PROXY, HTTPS_PROXY, NO_PROXY, http_proxy, https_proxy, no_proxy]
+          description: Install the plugin package and register it in cli.json
+
+      startup:
+        # opencode-config rewrites cli.json on every start and the order of
+        # the startup hooks between the kits is not guaranteed, so register
+        # again. Needs no network. Never blocks the start; the result is in
+        # /var/log/sbx-kit-startup.log.
+        - command: |
+            if [ -x "$HOME/.local/bin/requesty-plugin-register" ]; then
+              "$HOME/.local/bin/requesty-plugin-register" || echo "requesty-plugin: registering failed"
+            else
+              echo "requesty-plugin: helper missing, install hook did not complete"
+            fi
+            if ! ls -d "$HOME"/.cache/opencode/packages/@christiangalsterer/opencode-requesty-plugin* >/dev/null 2>&1; then
+              echo "requesty-plugin: warning: package not in ~/.cache/opencode/packages, opencode would need npm at start (blocked)"
+            fi
+            exit 0
+          description: Make sure the Requesty plugin is registered in cli.json

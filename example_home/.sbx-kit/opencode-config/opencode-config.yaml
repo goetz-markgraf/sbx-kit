@@ -1,0 +1,47 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+displayName: opencode host config
+description: Copies the allowlisted opencode config (cli.json with keybinds and theme, themes/) from the read-only host mount into ~/.config/opencode on every start.
+
+kind: mixin
+version: "1.0.0"
+
+capabilities:
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      startup:
+        # The source is mounted read-only by ~/.sbxenv.yaml (additionalWorkspaces,
+        # target must match). lifecycle.initialize in ~/.sbxenv.yaml stages only the allowlisted names there.
+        # opencode.json and plugins/ are deliberately not copied: the provider
+        # comes from llm-provider.
+        - command: |
+            src=/home/agent/.host-config/opencode
+            dst="$HOME/.config/opencode"
+            if [ ! -d "$src" ]; then
+              echo "opencode-config: no host config at $src, skipping"
+              exit 0
+            fi
+            mkdir -p "$dst"
+            if [ -e "$src/themes" ]; then
+              chmod -R u+w "$dst/themes" 2>/dev/null || true
+              rm -rf "$dst/themes"
+              cp -R "$src/themes" "$dst/themes"
+            fi
+            # cli.json: the host file is the base. Its `plugins` are dropped
+            # (host plugins are not available here and would need extra
+            # egress). The plugins that sandbox kits registered in the
+            # existing file stay.
+            if [ -f "$src/cli.json" ]; then
+              if command -v jq >/dev/null 2>&1; then
+                keep='[]'
+                if [ -f "$dst/cli.json" ] && jq -e . "$dst/cli.json" >/dev/null 2>&1; then
+                  keep=$(jq -c '.plugins // []' "$dst/cli.json")
+                fi
+                jq --argjson keep "$keep" 'del(.plugins) | if ($keep | length) > 0 then .plugins = $keep else . end' \
+                  "$src/cli.json" > "$dst/cli.json.tmp" && mv "$dst/cli.json.tmp" "$dst/cli.json"
+              else
+                echo "opencode-config: jq missing, cli.json copied unchanged"
+                cp "$src/cli.json" "$dst/cli.json"
+              fi
+            fi
+          description: Copy the allowlisted opencode host config

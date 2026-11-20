@@ -1,0 +1,122 @@
+schemaVersion: "1"
+
+# Central defaults for every sbx project of this user (simulated home dir).
+# sbx merges this file with the project's sbxenv.yaml when `sbx env` runs
+# without a path argument. Everything that is the same for all projects lives
+# here, outside every mounted workspace, so the agent cannot change it.
+#
+# The project's sbxenv.yaml only has to set:
+#   name: ${{ env.args.sandboxName }}
+#   args.sandboxName.default
+# `name` cannot be set in this file. Project-specific kits go into the
+# project's `kits:` list; lists are appended to the kits below.
+
+agent: shell
+
+# The directory `sbx env run` is started from.
+workspace: ${{ env.projectDir }}
+
+# Login shell so /etc/profile.d puts the mise tools on PATH for opencode.
+# `sbx env run -- bash` opens a shell instead.
+entrypoint: [/bin/bash, -lc]
+cmd: ["exec opencode"]
+
+env:
+  EDITOR: vim
+
+# The provider* args have no real default: the model provider is chosen per
+# project, which sets them in its own args (redeclaring `default`). The
+# llm-provider kit rejects empty values for providerId and providerHost, so a
+# project that forgets them fails at create with a clear message. The patterns
+# here allow empty values only so that this file is valid on its own.
+# sandboxName names the sandbox and the history directory; every project sets
+# it (and `name`). The pattern excludes `..`, `/` and ' because the value is
+# used with rm -rf and inside single-quoted host commands.
+args:
+  sandboxName:
+    default: sandbox
+    description: Sandbox name. Also names the history directory
+    pattern: "[A-Za-z0-9]+([._-][A-Za-z0-9]+)*"
+  providerId:
+    default: ""
+    description: Provider ID in opencode and service name of the sbx secret (set by the project)
+    pattern: "[a-z0-9-]*"
+  providerName:
+    default: ""
+    description: Display name of the provider in opencode; empty uses the ID
+    pattern: "[A-Za-z0-9 ._-]*"
+  providerHost:
+    default: ""
+    description: API host; the only destination the credential is injected into (set by the project)
+    pattern: "[a-z0-9.-]*"
+  providerBasePath:
+    default: /v1
+    description: Path of the OpenAI-compatible API on the host
+    pattern: "/[A-Za-z0-9/_-]*"
+  providerEnvName:
+    default: LLM_API_KEY
+    description: Placeholder variable for the key inside the sandbox
+    pattern: "[A-Z_][A-Z0-9_]*"
+  defaultModel:
+    default: ""
+    description: Optional model ID without provider prefix; empty selects the first listed model
+    pattern: "[A-Za-z0-9._/@:-]*"
+
+# Runs on the host and needs approval in the plan. Safe to run repeatedly.
+# ${{ env.fileDir }} is the directory of this file, i.e. the home directory
+# (sbx does not expand ~ or $HOME). The config stage is the allowlist for what
+# the sandbox sees of the host's opencode config: only cli.json and themes/.
+lifecycle:
+  initialize:
+    - name: Prepare history dir and stage opencode config
+      command: |
+        set -eu
+        umask 077
+        if [ "$SBX_SANDBOX_NAME" != '${{ env.args.sandboxName }}' ]; then
+          echo "use --env-arg sandboxName=<x> instead of --name" >&2
+          exit 1
+        fi
+        home='${{ env.fileDir }}'
+        root="$home/.sbx-history"
+        src="$home/.config/opencode"
+        name='${{ env.args.sandboxName }}'
+        stage="$root/.config-stage/$name"
+        mkdir -p "$root/$name" "$stage"
+        chmod -R u+w "$stage"
+        find "$stage" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        for entry in cli.json themes; do
+          [ -e "$src/$entry" ] && cp -RL "$src/$entry" "$stage/$entry"
+        done
+        exit 0
+      timeout: 1m
+
+# Relative kit paths resolve from the directory of the file that declares
+# them, so ./.sbx-kit is ~/.sbx-kit here.
+kits:
+  - docker.io/sbx/shell:latest
+  - docker.io/sbx/opencode-mixin:latest
+  - docker.io/sbx/mise:latest
+  - ./.sbx-kit/project-tools
+  - ./.sbx-kit/opencode-config
+  - source: ./.sbx-kit/llm-provider
+    args:
+      id: "${{ env.args.providerId }}"
+      name: "${{ env.args.providerName }}"
+      host: "${{ env.args.providerHost }}"
+      basePath: "${{ env.args.providerBasePath }}"
+      envName: "${{ env.args.providerEnvName }}"
+      defaultModel: "${{ env.args.defaultModel }}"
+
+# No secrets and bindings here: they depend on the provider and belong to the
+# project (see example/sbxenv.yaml). The llm-provider kit needs its credential,
+# so a project without secrets/bindings cannot start.
+
+# One history directory per sandbox: opencode runs its own server with its own
+# SQLite database, so sandboxes must not share one.
+additionalWorkspaces:
+  - path: ${{ env.fileDir }}/.sbx-history/${{ env.args.sandboxName }}
+    target: /home/agent/.local/share/opencode
+  # Read-only. The target must match kits/opencode-config.
+  - path: ${{ env.fileDir }}/.sbx-history/.config-stage/${{ env.args.sandboxName }}
+    target: /home/agent/.host-config/opencode
+    readOnly: true

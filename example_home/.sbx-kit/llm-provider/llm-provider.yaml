@@ -8,16 +8,17 @@ version: "1.0.0"
 
 args:
   id:
-    default: requesty
+    required: true
     pattern: '^[a-z0-9-]+$'
     description: Provider ID in opencode and service name of the sbx secret
-  name:
-    default: Requesty
-    description: Display name in opencode
   host:
-    default: router.eu.requesty.ai
+    required: true
     pattern: '^[a-z0-9.-]+$'
     description: API host, the only destination the credential is injected into
+  name:
+    default: ""
+    pattern: '^[A-Za-z0-9 ._-]*$'
+    description: Display name in opencode; empty uses the provider ID
   basePath:
     default: /v1
     pattern: '^/[A-Za-z0-9/_-]*$'
@@ -81,6 +82,7 @@ capabilities:
             import { Model, Plugin, Provider } from "@opencode/plugin"
 
             const id = "${{ kit.args.id }}"
+            const displayName = "${{ kit.args.name }}" || id
             const baseURL = "https://${{ kit.args.host }}${{ kit.args.basePath }}"
             // Only a placeholder; the sbx proxy replaces it with the real key.
             const apiKey = process.env["${{ kit.args.envName }}"] ?? "proxy-managed"
@@ -104,7 +106,7 @@ capabilities:
                   editor.add({
                     info: {
                       ...Provider.Info.empty(providerID),
-                      name: "${{ kit.args.name }}",
+                      name: displayName,
                       activation: "enabled",
                       package: "@opencode/ai/providers/openai-compatible",
                       settings: { baseURL, apiKey },

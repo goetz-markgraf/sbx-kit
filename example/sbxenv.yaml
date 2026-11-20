@@ -1,94 +1,79 @@
 schemaVersion: "1"
+
+# Project part of the sandbox configuration. Everything shared between
+# projects (agent, base kits, history, host config) comes from
+# ~/.sbxenv.yaml and ~/.sbx-kit/. sbx merges both files when it is started
+# without a path argument: run `sbx env run` from this directory.
+#
+# This file sits in the workspace root, so sbx mounts it read-only.
+# It must not contain host commands (lifecycle).
+
+# Required: `name` cannot be set in ~/.sbxenv.yaml.
 name: ${{ env.args.sandboxName }}
-agent: shell
 
-# The directory containing this file is the workspace. sbx mounts this file
-# read-only because it sits in the workspace root.
-workspace: .
-
-# Login shell so /etc/profile.d puts the mise tools on PATH for opencode.
-# `sbx env run -- bash` opens a shell instead.
-entrypoint: [/bin/bash, -lc]
-cmd: ["exec opencode"]
-
-env:
-  EDITOR: vim
-
-# The arg historyRoot is deliberately NOT declared here. sbx does not expand
-# $HOME or ~ in this file, so it comes from ~/.sbxenv.yaml (see README):
-#
-#   schemaVersion: "1"
-#   args:
-#     historyRoot:
-#       default: /Users/<you>/.sbx-history
-#       pattern: "/[^']+"
-#
-# Without that file sbx fails because historyRoot is unknown. Do not pass a
-# file path to `sbx env`: that skips ~/.sbxenv.yaml.
-# sandboxName becomes a directory name that is used with rm -rf: no `..`,
-# no `/`. The patterns exclude ' because values are inserted into
-# single-quoted host commands below.
 args:
   sandboxName:
     default: requesty-test
-    description: Sandbox name. Also names the history directory
-    pattern: "[A-Za-z0-9]+([._-][A-Za-z0-9]+)*"
+  # Model provider of this project: any OpenAI-compatible API. The keys of
+  # `secrets` and `bindings` below must equal providerId and the binding
+  # domain must equal providerHost (map keys cannot use args). This example
+  # uses Requesty; for another provider change these four values, e.g.
+  # openrouter / OpenRouter / openrouter.ai / /api/v1.
+  providerId:
+    default: requesty
+  providerName:
+    default: Requesty
+  providerHost:
+    default: router.eu.requesty.ai
+  providerBasePath:
+    default: /v1
 
-# Runs on the host and needs approval in the plan. Make sure it is safe to run
-# repeatedly. The config stage is the allowlist for what the sandbox sees:
-# only cli.json and themes/ are copied.
-lifecycle:
-  initialize:
-    - name: Prepare history dir and stage opencode config
-      command: |
-        set -eu
-        umask 077
-        if [ "$SBX_SANDBOX_NAME" != '${{ env.args.sandboxName }}' ]; then
-          echo "use --env-arg sandboxName=<x> instead of --name" >&2
-          exit 1
-        fi
-        root='${{ env.args.historyRoot }}'
-        src="$HOME/.config/opencode"
-        name='${{ env.args.sandboxName }}'
-        stage="$root/.config-stage/$name"
-        mkdir -p "$root/$name" "$stage"
-        chmod -R u+w "$stage"
-        find "$stage" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-        for entry in cli.json themes; do
-          [ -e "$src/$entry" ] && cp -RL "$src/$entry" "$stage/$entry"
-        done
-        exit 0
-      timeout: 1m
-
-kits:
-  - docker.io/sbx/shell:latest
-  - docker.io/sbx/opencode-mixin:latest
-  - docker.io/sbx/mise:latest
-  - ./kits/project-tools
-  - ./kits/opencode-config
-  - source: ./kits/llm-provider
-    args:
-      id: requesty
-      name: Requesty
-      host: router.eu.requesty.ai
-      basePath: /v1
-      envName: REQUESTY_API_KEY
-
+# Secrets live in the vault on the host; the sandbox only sees a placeholder.
+#
+# requesty-management belongs to the optional requesty-plugin kit. The
+# management API (api-v2.requesty.ai) is another host than the router, so it
+# is its own service. It may use the same vault item as the router if that
+# key is allowed to read management data.
 secrets:
   requesty:
+    ref: op://Employee/RequestyApiKey/password
+  requesty-management:
     ref: op://Employee/RequestyApiKey/password
 
 bindings:
   requesty:
     apiKey:
       domains: [router.eu.requesty.ai]
+  requesty-management:
+    apiKey:
+      domains: [api-v2.requesty.ai]
 
-# One history directory per sandbox: opencode runs its own server with its own
-# SQLite database, so sandboxes must not share one.
-additionalWorkspaces:
-  - path: ${{ env.args.historyRoot }}/${{ env.args.sandboxName }}
-    target: /home/agent/.local/share/opencode
-  # Read-only. The target must match kits/opencode-config.
-  - path: ${{ env.args.historyRoot }}/.config-stage/${{ env.args.sandboxName }}
-    target: /home/agent/.host-config/opencode
-    readOnly: true
+# Optional kit: budget and spend of the Requesty key in the opencode TUI.
+# Projects without Requesty, or without need for it, delete the kit entry
+# and the `requesty-management` entries in secrets and bindings.
+#
+# The kit comes from a Git repository (or an OCI image) because ~ is not
+# expanded in this file. Replace <ORG>/<REPO> and pin a commit. Remote
+# sources other than Docker Hub need:
+#   sbx settings set kit.allowedSources '["docker.io/","github.com/<ORG>/"]'
+# To try it from this repository, use the local path
+# ../example_home/.sbx-kit/requesty-plugin instead.
+kits:
+  - /Users/dragon/.sbx-kit/requesty-plugin
+#  - source: "git+https://github.com/<ORG>/<REPO>.git#ref=<COMMIT>&dir=requesty-plugin"
+#    args:
+#      options: '{"sidebar":{"showKeyName":true},"prompt":{"showKeyName":true}}'
+
+  # Optional project-specific kits (appended to the central ones). Paths are
+  # relative to this file. Keep project kits small: they are writable by the
+  # agent, so review changes with `git diff` and `sbx env plan`.
+  #
+  # - ./.sbx/my-kit
+  # - source: docker.io/example/other-kit:1.0.0
+  #   args:
+  #     flag: value
+
+# Optional project-specific environment variables:
+#
+# env:
+#   JAVA_TOOL_OPTIONS: -Xmx1g
