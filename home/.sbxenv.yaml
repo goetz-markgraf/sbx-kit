@@ -7,7 +7,8 @@ schemaVersion: "1"
 #
 # The project's sbxenv.yaml only has to set:
 #   name: ${{ env.args.sandboxName }}
-#   args.sandboxName.default
+#   args.sandboxName.default: <enter name here>
+#
 # `name` cannot be set in this file. Project-specific kits go into the
 # project's `kits:` list; lists are appended to the kits below.
 

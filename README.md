@@ -49,7 +49,7 @@ In diesem Repository simuliert `home/` das Home-Verzeichnis und `example/` ist e
 
 Zwei Regeln:
 
-- `name` darf nur im Projekt stehen.
+- `name` darf nur in `./sbxenv.yaml` (im Projekt) stehen.
 - Wer `sbx env` einen Pfad übergibt, überspringt `~/.sbxenv.yaml`. Deshalb immer **ohne Pfad aus dem Projektordner** starten.
 
 ### Was zentral steht
@@ -58,7 +58,7 @@ Zwei Regeln:
 
 - den Agent `shell`, der `opencode` in einer Login-Shell startet (damit die mise-Tools im `PATH` sind),
 - den Workspace `${{ env.projectDir }}`, also das Verzeichnis, aus dem man startet,
-- die Liste der Kits,
+- die Liste der globalen Kits, die in jede Sandbox geladen werden sollen,
 - einen Host-Befehl (`lifecycle.initialize`), der den Historie-Ordner anlegt und die opencode-Config bereitstellt,
 - die Mounts für Historie und Config,
 - generische Defaults wie `providerBasePath` und `EDITOR`.
@@ -85,20 +85,21 @@ Kits haben kein Dockerfile. Alles steht im Descriptor (`<name>.yaml`).
 
 1. **Netzrichtlinie** auf „Locked Down“ setzen:
    ```sh
-    sbx policy init deny-all
+   sbx policy init deny-all
    ```
 2. **Host-Befehle merken**, damit sbx nicht bei jedem Start fragt:
    ```sh
-    sbx settings set env.rememberHostCommands true
+   sbx settings set env.rememberHostCommands true
    ```
 
-    Der Host-Befehl in `~/.sbxenv.yaml` erscheint im Plan und braucht eine Genehmigung. Mit dieser Einstellung fragt sbx nur beim ersten Start und wenn sich der Befehl ändert. Sie gilt für alle Umgebungen auf dem Host.
+   Die Befehle in `~/.sbxenv.yaml`, die auf dem Host ausgeführt werden (`initialize`), erscheint im Plan und braucht eine Genehmigung. Mit dieser Einstellung fragt sbx nur beim ersten Start und wenn sich der Befehl ändert. Sie gilt für alle Umgebungen auf dem Host.
 3. **1Password CLI** (`op`) installieren und anmelden. Das Verzeichnis von `op` muss als absoluter Pfad im `PATH` stehen. Andere Secret-Quellen gehen auch (`command`, `value`, siehe sbx-Doku).
 4. **Zentrale Dateien ins Home-Verzeichnis kopieren:**
    - `home/.sbxenv.yaml` nach `~/.sbxenv.yaml`
    - `home/.sbx-kit/` nach `~/.sbx-kit/`
-
-    `~/.sbxenv.yaml` darf kein `name` enthalten. Wer opencode schon auf dem Host nutzt, hat `~/.config/opencode` bereits. Daraus übernimmt die Sandbox nur `cli.json` (Theme, Shortcuts) und `themes/`.
+   
+     `~/.sbxenv.yaml` darf kein `name` enthalten.
+   - Wer opencode schon auf dem Host nutzt, hat `~/.config/opencode` bereits. Daraus übernimmt die Sandbox nur `cli.json` (Theme, Shortcuts) und `themes/`.
 
 Wenn sich die zentralen Kits ändern: erneut kopieren und die Sandbox neu erstellen (`sbx env rm`, `sbx env run`).
 
@@ -108,11 +109,11 @@ Kopiere `example/sbxenv.yaml` und `example/mise.sandbox.toml` ins Projektverzeic
 
 ### Checkliste
 
-1. **Sandbox-Name:** `args.sandboxName.default`. Er muss eindeutig sein und bestimmt Sandbox und Historie-Ordner. Erlaubt sind Buchstaben, Ziffern und `.`, `_`, `-`.
-2. **Provider:** `providerId`, `providerHost` und optional `providerName` und `providerBasePath` (siehe unten).
-3. **Secret und Binding:** Der Schlüssel muss gleich `providerId` sein, die Domain gleich `providerHost`.
-4. **Dev-Tools:** `mise.sandbox.toml`.
-5. **Kits:** Das Requesty-Plugin-Kit nur behalten, wenn das Projekt Requesty nutzt (siehe Abschnitt 5).
+- [ ] **Sandbox-Name:** `args.sandboxName.default`. Er muss eindeutig sein und bestimmt Sandbox und Historie-Ordner. Erlaubt sind Buchstaben, Ziffern und `.`, `_`, `-`.
+- [ ] **Provider:** `providerId`, `providerHost` und optional `providerName` und `providerBasePath` (siehe unten).
+- [ ] **Secret und Binding:** Der Schlüssel muss gleich `providerId` sein, die Domain gleich `providerHost`. Über diesen Host wird das Secret in den Call injiziert und ist nicht innerhalb der Sandbox sichtbar.
+- [ ] **Dev-Tools:** `mise.sandbox.toml`. Hier unter `[tools]` eine Liste der Anwendungen aufnehmen, die in der Sandbox verfügbar sein sollen.
+- [ ] **Kits:** Hier können optional lokale Kits eingestellt werden und solche, die aus dem Internet geladen werden. An dieser Stelle können keine kits selektiert werden, die im $HOME-Verzeichnis liegen, denn Umgebungsvariablen und `~` werden nicht aufgelöst.
 
 ### Provider wählen
 
@@ -141,14 +142,14 @@ Beispiel OpenRouter: `providerId: openrouter`, `providerHost: openrouter.ai`, `p
 Map-Schlüssel in `secrets` und `bindings` können keine Args verwenden. Deshalb müssen sie von Hand zu `providerId` passen.
 
 
-| Arg                | Default       | Bedeutung                                                                                                         |
-| ------------------ | ------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `providerId`       | –             | Provider-ID in opencode und Service-Name des Secrets                                                              |
-| `providerHost`     | –             | API-Host, einziges Ziel für Key-Injection und Netzfreigabe                                                        |
-| `providerName`     | ID            | Anzeigename in opencode                                                                                           |
-| `providerBasePath` | `/v1`         | Pfad der API auf dem Host                                                                                         |
-| `providerEnvName`  | `LLM_API_KEY` | Variable mit dem Platzhalter in der Sandbox                                                                       |
-| `defaultModel`     | leer          | Modell-ID ohne Provider-Präfix. Leer: das erste Modell der Liste, nur solange in `opencode.json` noch keins steht |
+| Arg                | Default       | Bedeutung                                                                                                                                                 |
+| ------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `providerId`       | –             | Provider-ID in opencode und Service-Name des Secrets                                                                                                      |
+| `providerHost`     | –             | API-Host, einziges Ziel für Key-Injection und Netzfreigabe                                                                                                |
+| `providerName`     | ID            | Anzeigename in opencode                                                                                                                                   |
+| `providerBasePath` | `/v1`         | Pfad der API auf dem Host                                                                                                                                 |
+| `providerEnvName`  | `LLM_API_KEY` | Variable mit dem Platzhalter in der Sandbox. Diese enthält nicht selbst das Secret sondern nur einen Platzhalter, der durch sbx beim Aufruf ersetzt wird. |
+| `defaultModel`     | leer          | Modell-ID ohne Provider-Präfix. Leer: das erste Modell der Liste, nur solange in `opencode.json` noch keins steht                                         |
 
 
 ### Dev-Tools
@@ -169,7 +170,6 @@ Alle Befehle im Projektverzeichnis, ohne Pfad-Argument:
 
 | Aufgabe                                                      | Befehl                     |
 | ------------------------------------------------------------ | -------------------------- |
-| Plan ansehen, ohne etwas zu ändern                           | `sbx env plan`             |
 | Sandbox erstellen und opencode starten, oder wieder anhängen | `sbx env run`              |
 | Shell statt opencode                                         | `sbx env run -- bash`      |
 | Einen Befehl in der Sandbox ausführen                        | `sbx env exec -- <befehl>` |
@@ -191,7 +191,7 @@ Beim ersten Erstellen:
 | `kits`, `secrets`, `bindings`, Kit-Args, Mounts, `mise.sandbox.toml`, Änderungen an Kits | erst nach `sbx env rm` und neuem `run` |
 
 
-Schlägt das Erstellen fehl, bleiben Teile zurück (Secrets, halbe Sandbox). Dann immer zuerst `sbx env rm`.
+Schlägt das Erstellen fehl, können Teile zurück bleiben (Secrets, halbe Sandbox). Dann immer zuerst `sbx env rm`.
 
 ## 5. Optional: Requesty-Budget-Plugin
 
@@ -201,11 +201,11 @@ Einschalten im Projekt:
 
 ```yaml
 kits:
-  - /Users/[[ORCA_RICH_MD:00a5912dabddddd9487714ac52af7ccd:inline-html:%3Cdu%3E]]/.sbx-kit/requesty-plugin
+  - /Users/<username>/.sbx-kit/requesty-plugin
 
 secrets:
   requesty-management:
-    ref: op://Employee/RequestyApiKey/password
+    ref: op://<1password-path>
 
 bindings:
   requesty-management:
@@ -217,14 +217,14 @@ Mit Plugin-Optionen:
 
 ```yaml
 kits:
-  - source: /Users/<du>/.sbx-kit/requesty-plugin
+  - source: /Users/<username>/.sbx-kit/requesty-plugin
     args:
       options: '{"sidebar":{"showKeyName":true},"prompt":{"showKeyName":true}}'
 ```
 
 Hinweise:
 
-- **Absoluter Pfad:** `~`, `$HOME` und `${HOME}` werden in Kit-Pfaden nicht aufgelöst (getestet). Es muss der volle Pfad sein. Er enthält deinen Benutzernamen und passt deshalb nicht in ein gemeinsames Projekt. Für ein Team ist eine Veröffentlichung besser (Abschnitt 6, „Ein Kit veröffentlichen“).
+- **Absoluter Pfad:** `~`, `$HOME` und `${HOME}` werden in Kit-Pfaden nicht aufgelöst. Es muss der volle Pfad sein. Er enthält deinen Benutzernamen und passt deshalb nicht in ein gemeinsames Projekt. Für ein Team ist eine Veröffentlichung besser (Abschnitt 6, „Ein Kit veröffentlichen“).
 - **Eigener Service:** Die Management-API (`api-v2.requesty.ai`) ist ein anderer Host als der Router. Sie hat ein eigenes Secret und Binding. Der Key darf derselbe sein, braucht aber die Berechtigung `manage`.
 - **Variablen:** Das Plugin liest `REQUESTY_API_KEY`. Der Modell-Provider nutzt deshalb standardmäßig `LLM_API_KEY`.
 - **Args:** `version`, `options` (JSON-Objekt), `service`, `host`, `envName`.
@@ -244,12 +244,12 @@ Ein Kit bündelt Tools, Netzfreigaben, Credentials und Startbefehle. Es ist ein 
 ### Wo ein Kit liegt
 
 
-| Ort                               | Eintrag in `kits:`                                                 | Wann                                                                                 |
-| --------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| **Im Projekt**                    | `./.sbx/mein-kit` (relativ zur `sbxenv.yaml`)                      | Nur dieses Projekt braucht es. Es wandert mit dem Projekt ins Git.                   |
-| **Zentral, für alle**             | `./.sbx-kit/mein-kit` in `~/.sbxenv.yaml`                          | Alle Projekte brauchen es. Der Agent kann es nicht ändern.                           |
-| **Zentral, pro Projekt optional** | absoluter Pfad `/Users/<du>/.sbx-kit/mein-kit` in der Projektdatei | Nur du nutzt es, aber nicht in jedem Projekt. Beispiel: `requesty-plugin`.           |
-| **Geteilt**                       | Git-URL oder OCI-Referenz in der Projektdatei                      | Ein Team teilt es, ohne Benutzernamen im Pfad. Anleitung: „Ein Kit veröffentlichen“. |
+| Ort                               | Eintrag in `kits:`                                                       | Wann                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| **Im Projekt**                    | `./.sbx/mein-kit` (relativ zur `sbxenv.yaml`)                            | Nur dieses Projekt braucht es. Es wandert mit dem Projekt ins Git.                   |
+| **Zentral, für alle**             | `./.sbx-kit/mein-kit`, nutzbar nur in `~/.sbxenv.yaml`                   | Alle Projekte brauchen es. Der Agent kann es nicht ändern.                           |
+| **Zentral, pro Projekt optional** | absoluter Pfad `/Users/<username>/.sbx-kit/mein-kit` in der Projektdatei | Nur du nutzt es, aber nicht in jedem Projekt. Beispiel: `requesty-plugin`.           |
+| **Geteilt**                       | Git-URL oder OCI-Referenz in der Projektdatei                            | Ein Team teilt es, ohne Benutzernamen im Pfad. Anleitung: „Ein Kit veröffentlichen“. |
 
 
 Beispiele:
@@ -260,9 +260,9 @@ kits:
   - source: ./.sbx/anderes-kit
     args:
       flag: wert
-  - /Users/[[ORCA_RICH_MD:00a5912dabddddd9487714ac52af7ccd:inline-html:%3Cdu%3E]]/.sbx-kit/requesty-plugin
-  - source: "git+https://github.com/[[ORCA_RICH_MD:00a5912dabddddd9487714ac52af7ccd:inline-html:%3CORG%3E]]/[[ORCA_RICH_MD:00a5912dabddddd9487714ac52af7ccd:inline-html:%3CREPO%3E]].git#ref=[[ORCA_RICH_MD:00a5912dabddddd9487714ac52af7ccd:inline-html:%3CCOMMIT%3E]]&dir=mein-kit"
-  - docker.io/[[ORCA_RICH_MD:00a5912dabddddd9487714ac52af7ccd:inline-html:%3CNAMESPACE%3E]]/tool:1.0.0
+  - /Users/<username>/.sbx-kit/requesty-plugin
+  - source: "git+https://github.com/<name>/<project>&dir=mein-kit"
+  - docker.io/<namespace>/tool:1.0.0
 ```
 
 Die Liste wird an die zentralen Kits angehängt. Für Git und OCI gilt:
@@ -274,7 +274,7 @@ Wie ein Kit ohne Benutzernamen im Pfad zu den Projekten kommt, steht im nächste
 
 ### Ein Kit veröffentlichen (kein Benutzername im Pfad)
 
-Ein absoluter Pfad wie `/Users/<du>/.sbx-kit/requesty-plugin` gehört in kein gemeinsames Projekt. Mit einer Veröffentlichung steht in der Projektdatei stattdessen eine URL oder Referenz, die für alle gleich ist. Es gibt zwei Wege:
+Ein absoluter Pfad wie `/Users/<username>/.sbx-kit/requesty-plugin` gehört in kein gemeinsames Projekt. Mit einer Veröffentlichung steht in der Projektdatei stattdessen eine URL oder Referenz, die für alle gleich ist. Es gibt zwei Wege:
 
 
 |                      | GitHub (Git)                   | Docker Hub (OCI-Image)               |
@@ -295,27 +295,27 @@ Die Kits dieses Templates enthalten keine Secrets, nur Hostnamen und Skripte. Si
 
 1. **Repository anlegen.** Jedes Kit ist ein Verzeichnis mit einem Descriptor `<verzeichnisname>.yaml`. Die Verzeichnisse aus `home/.sbx-kit/` können direkt die Wurzel des Repositories sein:
    ```text
-    sbx-kits/
-    ├── requesty-plugin/requesty-plugin.yaml
-    ├── llm-provider/llm-provider.yaml
-    ├── opencode-config/opencode-config.yaml
-    └── project-tools/project-tools.yaml
+   sbx-kits/
+   ├── requesty-plugin/requesty-plugin.yaml
+   ├── llm-provider/llm-provider.yaml
+   ├── opencode-config/opencode-config.yaml
+   └── project-tools/project-tools.yaml
    ```
 2. **Quelle erlauben**, einmal pro Rechner. Die Einstellung ersetzt die ganze Liste:
    ```sh
-    sbx settings set kit.allowedSources '["docker.io/","github.com/[[ORCA_RICH_MD:00a5912dabddddd9487714ac52af7ccd:inline-html:%3CORG%3E]]/"]'
+   sbx settings set kit.allowedSources '["docker.io/","github.com/<ORG>/"]'
    ```
 
-    Das Muster passt auf Pfadgrenzen. `github.com/<ORG>/` erlaubt die Repositories dieser Organisation, nicht `github.com/<ORG>-andere/`.
+   Das Muster passt auf Pfadgrenzen. `github.com/<ORG>/` erlaubt die Repositories dieser Organisation, nicht `github.com/<ORG>-andere/`.
 3. **Im Projekt eintragen**, mit `dir` für das Kit-Verzeichnis und `ref` für den Commit:
    ```yaml
-    kits:
-      - "git+https://github.com/<ORG>/sbx-kits.git#ref=<COMMIT>&dir=requesty-plugin"
+   kits:
+     - "git+https://github.com/<ORG>/sbx-kits.git#ref=<COMMIT>&dir=requesty-plugin"
    ```
 
-    Mit Args:
-
-    Die URL steht in Anführungszeichen, weil sie `&` und `#` enthält. `ref` wählt laut Doku eine Revision (Commit, Tag oder Branch). Ein Commit ist unveränderlich und deshalb die sicherere Wahl. Tags und Branches können verschoben werden.
+   Mit Args:
+   
+   Die URL steht in Anführungszeichen, weil sie `&` und `#` enthält. `ref` wählt laut Doku eine Revision (Commit, Tag oder Branch). Ein Commit ist unveränderlich und deshalb die sicherere Wahl. Tags und Branches können verschoben werden.
 4. **Prüfen:** `sbx env plan` zeigt, welche Quelle sbx verwendet.
 
 Ein privates Repository ist denkbar (`git+ssh://git@github.com/<ORG>/sbx-kits.git#…` ist als Präfix dokumentiert). Wie sbx dabei an die Zugangsdaten kommt, steht in der Doku nicht. Das ist nicht getestet.
@@ -324,23 +324,23 @@ Ein privates Repository ist denkbar (`git+ssh://git@github.com/<ORG>/sbx-kits.gi
 
 1. **Anmelden und veröffentlichen.** Mit Docker Buildx, nicht mit `sbx kit push` (das ist für ältere Kit-Formate):
    ```sh
-    docker login
-    docker buildx build ./requesty-plugin -f ./requesty-plugin/requesty-plugin.yaml \
-        -t docker.io/[[ORCA_RICH_MD:00a5912dabddddd9487714ac52af7ccd:inline-html:%3CNAMESPACE%3E]]/requesty-plugin:1.0.0 --push
+   docker login
+   docker buildx build ./requesty-plugin -f ./requesty-plugin/requesty-plugin.yaml \
+       -t docker.io/<NAMESPACE>/requesty-plugin:1.0.0 --push
    ```
 
-    `<NAMESPACE>` ist dein Docker-Hub-Benutzer oder deine Organisation. Für Macs mit Apple Silicon und Linux-Rechner mit Intel zugleich:
-
-    Das Image muss in der Registry liegen. Ein Image nur im lokalen Docker reicht nicht.
+   `<NAMESPACE>` ist dein Docker-Hub-Benutzer oder deine Organisation. Für Macs mit Apple Silicon und Linux-Rechner mit Intel zugleich:
+   
+   Das Image muss in der Registry liegen. Ein Image nur im lokalen Docker reicht nicht.
 2. **Im Projekt eintragen:**
    ```yaml
-    kits:
-      - docker.io/<NAMESPACE>/requesty-plugin:1.0.0
+   kits:
+     - docker.io/<NAMESPACE>/requesty-plugin:1.0.0
    ```
 
-    Mit Args:
-
-    Für eine feste Version statt des Tags den Digest verwenden: `docker.io/<NAMESPACE>/requesty-plugin@sha256:…`. `docker buildx imagetools inspect <referenz>` zeigt ihn.
+   Mit Args:
+   
+   Für eine feste Version statt des Tags den Digest verwenden: `docker.io/<NAMESPACE>/requesty-plugin@sha256:…`. `docker buildx imagetools inspect <referenz>` zeigt ihn.
 3. **Privates Repository:** Für Docker Hub nutzt sbx die Anmeldung von `sbx login`. Für andere Registries (z. B. `ghcr.io`) braucht sbx Zugangsdaten: `gh auth token | sbx secret set --registry ghcr.io --password-stdin`.
 4. **Optional signieren:** `sbx kit sign docker.io/<NAMESPACE>/requesty-plugin:1.0.0`. Dann `kit.trustedSigners` und `kit.requireSignature` setzen, siehe sbx-Doku.
 
@@ -423,13 +423,13 @@ Ein Kit nennt nur den Service, nie den Key:
 1. Das Kit deklariert `credential@1` mit `service: mein-dienst`.
 2. Die Projektdatei liefert Key und Freigabe:
    ```yaml
-    secrets:
-      mein-dienst:
-        ref: op://Vault/Item/password
-    bindings:
-      mein-dienst:
-        apiKey:
-          domains: [api.example.com]
+   secrets:
+     mein-dienst:
+       ref: op://Vault/Item/password
+   bindings:
+     mein-dienst:
+       apiKey:
+         domains: [api.example.com]
    ```
 
 Pro Service und Phase darf nur ein Kit zuständig sein.

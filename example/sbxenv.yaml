@@ -27,6 +27,8 @@ args:
     default: router.eu.requesty.ai
   providerBasePath:
     default: /v1
+  defaultModel:
+    default: vertex/claude-sonnet-5-5@eu
 
 # Secrets live in the vault on the host; the sandbox only sees a placeholder.
 #
