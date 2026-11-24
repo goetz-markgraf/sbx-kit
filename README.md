@@ -139,7 +139,7 @@ bindings:
 
 Beispiel OpenRouter: `providerId: openrouter`, `providerHost: openrouter.ai`, `providerBasePath: /api/v1`, dazu `secrets.openrouter` und `bindings.openrouter` mit Domain `openrouter.ai`.
 
-Map-Schlüssel in `secrets` und `bindings` können keine Args verwenden. Deshalb müssen sie von Hand zu `providerId` passen.
+Map-Schlüssel in `secrets` und `bindings` können keine Args verwenden. Deshalb müssen sie von Hand zu `providerId` passen. sbx prüft das nicht und bricht bei einer Abweichung nicht ab (getestet). Ein Tippfehler fällt deshalb nicht beim Erstellen auf. Nach dem Erstellen mit `sbx secret ls` und `sbx env plan` kontrollieren, dass die Namen übereinstimmen.
 
 
 | Arg                | Default       | Bedeutung                                                                                                                                                 |
@@ -192,6 +192,8 @@ Beim ersten Erstellen:
 
 
 Schlägt das Erstellen fehl, können Teile zurück bleiben (Secrets, halbe Sandbox). Dann immer zuerst `sbx env rm`.
+
+Was `sbx env rm` laut sbx-Doku entfernt: die Sandbox und ihre Secrets (Secrets gelten pro Sandbox). Die Bindings sind host-global und bleiben stehen. Nur `sbx env rm --prune-bindings` löscht sie, und das betrifft auch andere Sandboxen mit denselben Bindings.
 
 ## 5. Optional: Requesty-Budget-Plugin
 
@@ -493,6 +495,7 @@ Typische Fälle:
 - **Eine Kit-Änderung wirkt nicht:** Die Sandbox muss neu erstellt werden. Außerdem prüfen, ob die Änderung wirklich in `~/.sbx-kit` angekommen ist. Die Kopie im Repository wird nicht automatisch verwendet.
 - **Der Provider zeigt keine Modelle:** `sbx policy log` auf gesperrte Hosts prüfen, und ob `providerId`, `providerHost` und die Schlüssel in `secrets` und `bindings` zusammenpassen.
 - **Das Plugin fehlt in der TUI:** `opencode plugin list` und `cli.json` prüfen. Ohne Anzeige trotz Eintrag: Hat der Key die Berechtigung `manage`?
+- **Secrets bleiben nach `sbx env rm` stehen, und `sbx secret rm` meldet `-25244` (macOS):** Das ist ein Fehler von sbx 0.54.0. Die Keychain-Einträge stammen aus einer älteren sbx-Version, und die neue Version darf sie nicht ändern ([docker/sbx-releases#899](https://github.com/docker/sbx-releases/issues/899)). Laut Release-Notes behebt sbx 0.54.1 das („secrets saved before an upgrade can be removed without manually deleting their Keychain entries“). Mit `brew update && brew upgrade --cask sbx` aktualisieren, dann `sbx secret rm <service> --sandbox <name>` wiederholen. Das Update ist hier nicht getestet. Bis dahin hilft nur das Löschen des Eintrags mit `security delete-generic-password`. Das Muster des Account-Namens steht im Issue.
 
 ## Geprüft
 
@@ -508,14 +511,20 @@ Mit `sbx` auf macOS getestet (Sandbox erstellt, opencode gestartet, Requesty-Mod
 - `opencode-config`: `cli.json` mit Theme und Keybinds vom Host, ohne Host-Plugins.
 - `opencode.json` legt `sbx/opencode-mixin` an. Es steht kein Provider-Eintrag und kein Key darin.
 - mise liest mit `MISE_OVERRIDE_CONFIG_FILENAMES` nur die genannte Datei, `mise trust` bleibt nach Änderungen gültig.
+- Die Muster der Args in `~/.sbxenv.yaml` und im Kit `requesty-plugin` sind mit `^…$` verankert. Die Sandboxen ließen sich damit neu aufbauen und liefen wie zuvor.
+- Der Host-Befehl bricht ab, wenn jemand `--name` statt `--env-arg sandboxName=…` benutzt. Die Fehlermeldung erscheint.
+- Bei leerem `providerId` oder `providerHost` bricht das Erstellen mit einer Fehlermeldung ab.
+- Ein Schlüssel in `secrets`, der nicht zu `providerId` passt (getestet mit einem umbenannten Schlüssel und mit einer geänderten `providerId`): sbx meldet beim Erstellen **keinen Fehler**. Die Sandbox lief in beiden Fällen weiter. Warum sie trotz der Abweichung funktionierte, ist nicht geklärt (siehe „Noch nicht geprüft“).
+- Nach `sbx env rm` standen die Secrets weiter in `sbx secret ls` (Scopes `config`, `requesty-test`, `sbx-kit`). `sbx secret rm` scheiterte mit `-25244`. Das ist ein bekannter Fehler von sbx 0.54.0 auf macOS (siehe Abschnitt 9).
 
 ## Noch nicht geprüft
 
 - Relative Projekt-Kits (`./.sbx/...`) und Git- oder OCI-Quellen in der Projektdatei, auch `kit.allowedSources`.
 - Das Veröffentlichen (Abschnitt 6): `git+https://…#ref=…&dir=…` als Kit-Quelle, und `docker buildx build` für ein Kit ohne Dockerfile. Laut Spezifikation darf ein Mixin ohne Recipe ein reines Descriptor-Image ergeben. Ein privates Git-Repository und `git+ssh` sind nicht getestet.
 - Das Zusammenführen von `secrets`, `bindings` und `env`, wenn sie in beiden Dateien stehen. Die Tabelle in Abschnitt 1 folgt der sbx-Doku (verschachtelte Maps werden je Schlüssel zusammengeführt). Im Beispiel stehen `secrets` und `bindings` nur im Projekt.
-- Die Fehlermeldung bei leerem `providerId` oder `providerHost`, und bei einem Schlüssel in `secrets`, der nicht zu `providerId` passt.
-- Der Abbruch des Host-Befehls, wenn jemand `--name` statt `--env-arg sandboxName=…` benutzt.
+- Warum die Sandbox mit einem nicht passenden Schlüssel in `secrets` oder einer abweichenden `providerId` trotzdem funktionierte. Der Test lief mit Secrets aus früheren Läufen im Speicher, und nach dem Löschen wurde er nicht wiederholt. Möglich ist, dass der Proxy über das globale Binding (Domain) zuordnet und nicht über den Service-Namen. Das ist eine Vermutung. Bis zur Klärung gilt die Regel aus Abschnitt 3 weiter, weil sie die sichere Wahl ist.
+- Werte, die das Muster von `sandboxName` ausschließen soll, etwa `x/../y` oder `a'; id`: ob sbx sie wirklich ablehnt.
+- Ob `sbx env rm` die Secrets der Sandbox entfernt. Der Test lief mit sbx 0.54.0, wo der Fehler `-25244` das Löschen verhindert haben kann. Mit 0.54.1 oder neuer wiederholen.
 - Zwei Services (`requesty`, `requesty-management`) mit demselben Vault-Eintrag funktionieren. Die Sandbox lief damit, die Rechte des Keys für die Management-API wurden nicht einzeln geprüft.
 - Das Plugin lädt zur Laufzeit ohne Netz aus dem Cache. Es lief, aber ob opencode beim Start doch npm braucht, ist nicht untersucht.
 - Der Hinweis in der globalen `AGENTS.md` mit der Tool-Liste: Format von `mise ls --current` und ob der Mixin die Datei später überschreibt.
@@ -523,3 +532,10 @@ Mit `sbx` auf macOS getestet (Sandbox erstellt, opencode gestartet, Requesty-Mod
 - Einstellungen, die die TUI in der Sandbox schreibt (etwa `session.sidebar: hide`), gehen beim nächsten Start verloren, weil der Host die Quelle ist.
 - Ob die Download-Hosts in `project-tools` für alle Tools reichen, die jemand ergänzt.
 - Das Beispiel-Kit `postgres-client` ist ein Muster und nicht ausgeführt.
+
+## 10. Weitere Informationen:
+
+| Beschreibung | Quelle / Details |
+| ---- | ---- |
+| Artikel, wie Passwörter mittlerweile abgegriffen werden | https://arstechnica.com/security/2026/11/a-leaky-ai-supply-chain-is-exposing-secret-user-data-at-an-alarming-rate/ |
+
