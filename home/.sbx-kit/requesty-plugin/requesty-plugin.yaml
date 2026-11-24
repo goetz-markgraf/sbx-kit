@@ -13,7 +13,7 @@ args:
     description: Version of @christiangalsterer/opencode-requesty-plugin
   options:
     default: "{}"
-    pattern: "\\{[^']*\\}"
+    pattern: "^\\{[^']*\\}$"
     description: Plugin options as a JSON object (refreshIntervalMs, sidebar, prompt, dialog, ...)
   service:
     default: requesty-management

@@ -37,31 +37,31 @@ args:
   sandboxName:
     default: sandbox
     description: Sandbox name. Also names the history directory
-    pattern: "[A-Za-z0-9]+([._-][A-Za-z0-9]+)*"
+    pattern: '^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$'
   providerId:
     default: ""
     description: Provider ID in opencode and service name of the sbx secret (set by the project)
-    pattern: "[a-z0-9-]*"
+    pattern: '^[a-z0-9-]*$'
   providerName:
     default: ""
     description: Display name of the provider in opencode; empty uses the ID
-    pattern: "[A-Za-z0-9 ._-]*"
+    pattern: '^[A-Za-z0-9 ._-]*$'
   providerHost:
     default: ""
     description: API host; the only destination the credential is injected into (set by the project)
-    pattern: "[a-z0-9.-]*"
+    pattern: '^[a-z0-9.-]*$'
   providerBasePath:
     default: /v1
     description: Path of the OpenAI-compatible API on the host
-    pattern: "/[A-Za-z0-9/_-]*"
+    pattern: '^/[A-Za-z0-9/_-]*$'
   providerEnvName:
     default: LLM_API_KEY
     description: Placeholder variable for the key inside the sandbox
-    pattern: "[A-Z_][A-Z0-9_]*"
+    pattern: '^[A-Z_][A-Z0-9_]*$'
   defaultModel:
     default: ""
     description: Optional model ID without provider prefix; empty selects the first listed model
-    pattern: "[A-Za-z0-9._/@:-]*"
+    pattern: '^[A-Za-z0-9._/@:-]*$'
 
 # Runs on the host and needs approval in the plan. Safe to run repeatedly.
 # ${{ env.fileDir }} is the directory of this file, i.e. the home directory
