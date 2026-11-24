@@ -495,7 +495,6 @@ Typische Fälle:
 - **Eine Kit-Änderung wirkt nicht:** Die Sandbox muss neu erstellt werden. Außerdem prüfen, ob die Änderung wirklich in `~/.sbx-kit` angekommen ist. Die Kopie im Repository wird nicht automatisch verwendet.
 - **Der Provider zeigt keine Modelle:** `sbx policy log` auf gesperrte Hosts prüfen, und ob `providerId`, `providerHost` und die Schlüssel in `secrets` und `bindings` zusammenpassen.
 - **Das Plugin fehlt in der TUI:** `opencode plugin list` und `cli.json` prüfen. Ohne Anzeige trotz Eintrag: Hat der Key die Berechtigung `manage`?
-- **Secrets bleiben nach `sbx env rm` stehen, und `sbx secret rm` meldet `-25244` (macOS):** Das ist ein Fehler von sbx 0.54.0. Die Keychain-Einträge stammen aus einer älteren sbx-Version, und die neue Version darf sie nicht ändern ([docker/sbx-releases#899](https://github.com/docker/sbx-releases/issues/899)). Laut Release-Notes behebt sbx 0.54.1 das („secrets saved before an upgrade can be removed without manually deleting their Keychain entries“). Mit `brew update && brew upgrade --cask sbx` aktualisieren, dann `sbx secret rm <service> --sandbox <name>` wiederholen. Das Update ist hier nicht getestet. Bis dahin hilft nur das Löschen des Eintrags mit `security delete-generic-password`. Das Muster des Account-Namens steht im Issue.
 
 ## Geprüft
 
