@@ -39,8 +39,10 @@ args:
 secrets:
   requesty:
     ref: op://Employee/RequestyApiKey/password
+    refresh: 8h
   requesty-management:
     ref: op://Employee/RequestyApiKey/password
+    refresh: 8h
 
 bindings:
   requesty:
