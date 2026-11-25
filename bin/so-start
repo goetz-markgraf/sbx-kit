@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Starts the sandbox of the current directory (or attaches to it).
+# Without arguments opencode starts with the central default. Arguments are
+# passed to opencode, e.g. `so-start --continue`.
+# For anything else use `sbx env run -- <command>` directly.
+set -euo pipefail
+
+if [ ! -f sbxenv.yaml ] && [ ! -f .sbxenv.yaml ]; then
+  echo "No sbxenv.yaml found in $PWD." >&2
+  echo "Run so-init to set up this directory for a sandbox first." >&2
+  exit 1
+fi
+
+if [ "$#" -eq 0 ]; then
+  exec sbx env run
+fi
+
+# The central entrypoint is `bash -lc`, so the command must be ONE string.
+printf -v cmd '%q ' "$@"
+exec sbx env run -- "exec opencode $cmd"

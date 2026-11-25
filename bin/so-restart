@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Removes the sandbox of the current directory and starts it again,
+# e.g. after a change of kits, secrets or mise.sandbox.toml.
+# Arguments are passed to so-start (and so to opencode).
+set -euo pipefail
+
+bin_dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+
+sbx env rm
+exec "$bin_dir/so-start" "$@"

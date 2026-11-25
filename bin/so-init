@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Sets up the current directory for a sandbox: creates sbxenv.yaml from the
+# template in ~/.sbx-templates with a new sandbox name.
+set -euo pipefail
+
+template_dir="$HOME/.sbx-templates"
+pattern='^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$'
+
+[ -f "$template_dir/sbxenv.yaml" ] || { echo "Template missing: $template_dir/sbxenv.yaml" >&2; exit 1; }
+
+# Default: name of the current directory, reduced to the allowed characters.
+default="$(basename "$PWD" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^[^A-Za-z0-9]+//; s/[^A-Za-z0-9]+$//')"
+
+read -r -p "Sandbox name [${default}]: " name
+name="${name:-$default}"
+
+if ! [[ "$name" =~ $pattern ]]; then
+  echo "Invalid name '$name'. Allowed: letters, digits and . _ - (not at the start or end, not doubled)." >&2
+  exit 1
+fi
+
+if [ -e sbxenv.yaml ]; then
+  read -r -p "sbxenv.yaml exists. Overwrite? [y/N] " answer
+  [[ "$answer" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
+fi
+
+# Replaces the default of args.sandboxName and the absolute home directory
+# in the kit path (sbx resolves neither ~ nor $HOME there).
+awk -v name="$name" -v home="$HOME" '
+  /^  sandboxName:/ { in_arg = 1 }
+  in_arg && /^    default:/ { print "    default: " name; in_arg = 0; next }
+  {
+    i = index($0, "/Users/dragon/.sbx-kit/")
+    if (i) $0 = substr($0, 1, i - 1) home substr($0, i + length("/Users/dragon"))
+    print
+  }
+' "$template_dir/sbxenv.yaml" > sbxenv.yaml
+
+echo "Created sbxenv.yaml for sandbox '$name'."
+echo "Next: adjust provider and secrets, then run so-start."

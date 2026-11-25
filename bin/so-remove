@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Removes the sandbox of the current directory. The history stays.
+# Arguments go to `sbx env rm`, e.g. --prune-bindings.
+set -euo pipefail
+
+exec sbx env rm "$@"
