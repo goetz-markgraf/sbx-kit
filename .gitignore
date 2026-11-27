@@ -1,0 +1,5 @@
+# Local sandbox config of this repository (machine-specific). Anchored to the
+# root, so home/.sbxenv.yaml, home/.sbx-templates/sbxenv.yaml and
+# example/sbxenv.yaml stay under version control.
+/sbxenv.yaml
+/.sbxenv.yaml
