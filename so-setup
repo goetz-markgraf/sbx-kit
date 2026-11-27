@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# Sets up the host for sandbox-opencode:
+#  1. checks that sbx is installed (otherwise stops here) and applies the
+#     one-time sbx settings (asks first, they are global for the whole machine),
+#  2. copies the known files and directories of home/ into $HOME (asks before
+#     replacing),
+#  3. installs the scripts of bin/ into ~/bin or ~/.local/bin.
+# Afterwards `so-init` can set up the first project directory.
+set -euo pipefail
+
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+src_home="$root_dir/home"
+src_bin="$root_dir/bin"
+
+# The only entries that are copied from home/ and bin/. Anything else in the
+# repository is ignored.
+home_files=(.sbxenv.yaml .sbx-templates/sbxenv.yaml)
+home_dirs=(.sbx-kit)
+scripts=(so-init so-start so-restart so-remove)
+
+[ -n "${HOME:-}" ] || { echo "HOME is not set." >&2; exit 1; }
+for entry in "${home_files[@]}"; do
+  [ -f "$src_home/$entry" ] || { echo "Missing: $src_home/$entry" >&2; exit 1; }
+done
+for entry in "${home_dirs[@]}"; do
+  [ -d "$src_home/$entry" ] || { echo "Missing: $src_home/$entry" >&2; exit 1; }
+done
+for entry in "${scripts[@]}"; do
+  [ -f "$src_bin/$entry" ] || { echo "Missing: $src_bin/$entry" >&2; exit 1; }
+done
+if [ "$(cd "$HOME" && pwd -P)" = "$src_home" ]; then
+  echo "HOME points to $src_home, nothing to do." >&2
+  exit 1
+fi
+
+ask() {
+  local answer
+  read -r -p "$1 [y/N] " answer || answer=""
+  [[ "$answer" =~ ^[Yy]$ ]]
+}
+
+same() {
+  if [ -d "$1" ] && [ -d "$2" ]; then
+    diff -rq "$1" "$2" >/dev/null 2>&1
+  elif [ -f "$1" ] && [ -f "$2" ] && [ ! -L "$2" ]; then
+    cmp -s "$1" "$2"
+  else
+    return 1
+  fi
+}
+
+# Copies a file or directory. Existing targets are only replaced after asking;
+# identical ones are skipped. The permissions are set here and not taken from
+# the repository: directories 755, files $4 (644 or 755).
+# $1 = source, $2 = target, $3 = label, $4 = file mode.
+install_entry() {
+  local from="$1" to="$2" label="$3" mode="$4"
+  if [ -e "$to" ] || [ -L "$to" ]; then
+    if same "$from" "$to"; then
+      echo "  up to date  $label"
+      return 0
+    fi
+    if ! ask "  $label exists and differs. Replace?"; then
+      echo "  kept        $label"
+      return 0
+    fi
+    rm -rf "$to"
+  fi
+  mkdir -p "$(dirname "$to")"
+  cp -R "$from" "$to"
+  if [ -d "$to" ]; then
+    find "$to" -type d -exec chmod 755 {} +
+    find "$to" -type f -exec chmod "$mode" {} +
+  else
+    chmod "$mode" "$to"
+  fi
+  echo "  copied      $label"
+}
+
+echo "Checking sbx"
+if command -v sbx >/dev/null 2>&1; then
+  echo "  sbx found: $(command -v sbx)"
+else
+  echo "  sbx is NOT installed. Nothing was changed." >&2
+  echo "  Install sbx first: https://docs.docker.com/ai/sandboxes/get-started/install/" >&2
+  echo "  Then run so-setup again." >&2
+  exit 1
+fi
+
+# `sbx policy init` only works as long as no policy is set. It also fails for
+# other reasons, so the result is checked by listing the active rules below.
+echo "  The network policy of sbx is global. Locked Down (deny-all) lets sandboxes"
+echo "  reach only what a kit or you allow explicitly."
+if ask "  Run 'sbx policy init deny-all'?"; then
+  if sbx policy init deny-all; then
+    echo "  done        network policy: deny-all"
+  else
+    echo "  'sbx policy init deny-all' failed: either a policy is set already"
+    echo "  (it stays unchanged) or sbx reported an error (see the message above)."
+  fi
+else
+  echo "  skipped     network policy"
+fi
+
+echo
+echo "  Active network policy (sbx policy ls):"
+echo "  Check that the default is to deny and that no rule allows every host"
+echo "  (\"**\"). Each allow rule is a host that all sandboxes may reach."
+echo "  To start over: sbx policy reset (also deletes all local rules), then"
+echo "  run so-setup again."
+echo
+if ! sbx policy ls 2>&1 | sed 's/^/    /'; then
+  echo "  Could not list the network policy. Check it yourself: sbx policy ls" >&2
+fi
+echo
+
+echo "  Without this setting sbx asks for approval of the host command in ~/.sbxenv.yaml"
+echo "  on every start. The setting is global for all environments."
+if ask "  Run 'sbx settings set env.rememberHostCommands true'?"; then
+  if sbx settings set env.rememberHostCommands true; then
+    echo "  done        env.rememberHostCommands = true"
+  else
+    echo "  Failed. Run it yourself: sbx settings set env.rememberHostCommands true" >&2
+  fi
+else
+  echo "  skipped     env.rememberHostCommands"
+fi
+
+echo
+echo "Copying home/ to $HOME"
+for entry in "${home_files[@]}"; do
+  install_entry "$src_home/$entry" "$HOME/$entry" "~/$entry" 644
+done
+# All kits count as one unit: replacing ~/.sbx-kit replaces every kit in it,
+# also kits that exist only there.
+for entry in "${home_dirs[@]}"; do
+  install_entry "$src_home/$entry" "$HOME/$entry" "~/$entry/" 644
+done
+mkdir -p "$HOME/.sbx-history"
+
+in_path() {
+  case ":$PATH:" in *":$1:"*|*":$1/:"*) return 0 ;; *) return 1 ;; esac
+}
+
+# Only ~/bin and ~/.local/bin are used, in this order.
+find_bin_dir() {
+  local dir
+  for dir in "$HOME/bin" "$HOME/.local/bin"; do
+    if [ -d "$dir" ] && [ -w "$dir" ] && in_path "$dir"; then
+      echo "$dir"
+      return 0
+    fi
+  done
+  return 1
+}
+
+echo
+echo "Installing the scripts of bin/"
+need_path_hint=0
+if ! bin_dir="$(find_bin_dir)"; then
+  bin_dir="$HOME/bin"
+  echo "  Neither ~/bin nor ~/.local/bin is a writable directory on your PATH."
+  if [ -d "$bin_dir" ]; then
+    question="  Use the existing $bin_dir anyway?"
+  else
+    question="  Create $bin_dir?"
+  fi
+  if ask "$question"; then
+    mkdir -p "$bin_dir"
+    need_path_hint=1
+  else
+    bin_dir=""
+    echo "  Scripts not installed. Copy bin/* to a directory on your PATH yourself."
+  fi
+fi
+
+if [ -n "$bin_dir" ]; then
+  echo "  Target: $bin_dir"
+  for script in "${scripts[@]}"; do
+    install_entry "$src_bin/$script" "$bin_dir/$script" "$script" 755
+  done
+fi
+
+if [ "$need_path_hint" -eq 1 ]; then
+  case "$(basename "${SHELL:-}")" in
+    zsh) rc="~/.zshrc" ;;
+    bash) rc="~/.bashrc" ;;
+    *) rc="the startup file of your shell" ;;
+  esac
+  echo
+  echo "NOTE: $bin_dir is not on your PATH yet. Add this line to $rc"
+  echo "and open a new terminal:"
+  echo
+  echo "  export PATH=\"$bin_dir:\$PATH\""
+fi
+
+echo
+command -v op >/dev/null 2>&1 || echo "Warning: 'op' (1Password CLI) not found on PATH (see README, section 2)."
+echo "Done. Next: go to a project directory and run so-init."

@@ -4,7 +4,18 @@
 # Arguments are passed to so-start (and so to opencode).
 set -euo pipefail
 
-bin_dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+if [ "$(pwd -P)" = "$(cd "$HOME" && pwd -P)" ]; then
+  echo "so-restart does not run in the home directory: there is no sandbox for it." >&2
+  exit 1
+fi
+if [ ! -f sbxenv.yaml ] && [ ! -f .sbxenv.yaml ]; then
+  echo "No sbxenv.yaml found in $PWD." >&2
+  echo "Run so-init to set up this directory for a sandbox first." >&2
+  exit 1
+fi
+
+# so-start is installed next to this script.
+bin_dir="$(dirname "${BASH_SOURCE[0]}")"
 
 sbx env rm
 exec "$bin_dir/so-start" "$@"

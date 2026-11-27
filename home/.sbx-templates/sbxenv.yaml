@@ -58,14 +58,14 @@ bindings:
 #
 # The kit lives centrally in ~/.sbx-kit, but this project opts in. Neither ~
 # nor $HOME nor ${HOME} is resolved here (tested), so use the ABSOLUTE path
-# of your home directory (replace /Users/dragon). Alternative that does not
+# of your home directory (so-init replaces <HOME> with it). Alternative that does not
 # depend on a user name: a Git source (needs `sbx settings set
 # kit.allowedSources ...`) or an OCI image:
 #   - source: "git+https://github.com/<ORG>/<REPO>.git#ref=<COMMIT>&dir=requesty-plugin"
 kits:
-  - /Users/dragon/.sbx-kit/requesty-plugin
+  # - <HOME>/.sbx-kit/requesty-plugin
   # With plugin options:
-  # - source: /Users/dragon/.sbx-kit/requesty-plugin
+  # - source: <HOME>/.sbx-kit/requesty-plugin
   #   args:
   #     options: '{"sidebar":{"showKeyName":true},"prompt":{"showKeyName":true}}'
 

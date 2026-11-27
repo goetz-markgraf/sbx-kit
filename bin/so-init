@@ -3,13 +3,19 @@
 # template in ~/.sbx-templates with a new sandbox name.
 set -euo pipefail
 
-template_dir="$HOME/.sbx-templates"
+template="$HOME/.sbx-templates/sbxenv.yaml"
 pattern='^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$'
 
-[ -f "$template_dir/sbxenv.yaml" ] || { echo "Template missing: $template_dir/sbxenv.yaml" >&2; exit 1; }
+[ -f "$template" ] || { echo "Template missing: $template (run so-setup first)" >&2; exit 1; }
 
-# Default: name of the current directory, reduced to the allowed characters.
-default="$(basename "$PWD" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^[^A-Za-z0-9]+//; s/[^A-Za-z0-9]+$//')"
+if [ "$(pwd -P)" = "$(cd "$HOME" && pwd -P)" ]; then
+  echo "so-init does not run in the home directory: it must not become a workspace." >&2
+  exit 1
+fi
+
+# Default: name of the current directory, reduced to the allowed characters
+# (other characters and runs of . _ - become one -, none at the start or end).
+default="$(basename "$PWD" | sed -E 's/[^A-Za-z0-9._-]+/-/g; s/[._-]{2,}/-/g; s/^[^A-Za-z0-9]+//; s/[^A-Za-z0-9]+$//')"
 
 read -r -p "Sandbox name [${default}]: " name
 name="${name:-$default}"
@@ -19,22 +25,39 @@ if ! [[ "$name" =~ $pattern ]]; then
   exit 1
 fi
 
-if [ -e sbxenv.yaml ]; then
+if [ -d sbxenv.yaml ] && [ ! -L sbxenv.yaml ]; then
+  echo "sbxenv.yaml is a directory. Aborted." >&2
+  exit 1
+fi
+if [ -e sbxenv.yaml ] || [ -L sbxenv.yaml ]; then
   read -r -p "sbxenv.yaml exists. Overwrite? [y/N] " answer
   [[ "$answer" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
 fi
 
-# Replaces the default of args.sandboxName and the absolute home directory
-# in the kit path (sbx resolves neither ~ nor $HOME there).
+# Sets the default of args.sandboxName (quoted, so that names like `true` or
+# `123` stay strings) and replaces the placeholder <HOME> in the kit paths
+# with the home directory (sbx resolves neither ~ nor $HOME there).
+tmp="$(mktemp sbxenv.yaml.XXXXXX)"
+trap 'rm -f "$tmp"' EXIT
 awk -v name="$name" -v home="$HOME" '
   /^  sandboxName:/ { in_arg = 1 }
-  in_arg && /^    default:/ { print "    default: " name; in_arg = 0; next }
+  in_arg && /^    default:/ { print "    default: \"" name "\""; in_arg = 0; done = 1; next }
   {
-    i = index($0, "/Users/dragon/.sbx-kit/")
-    if (i) $0 = substr($0, 1, i - 1) home substr($0, i + length("/Users/dragon"))
-    print
+    line = ""
+    while ((i = index($0, "<HOME>")) > 0) {
+      line = line substr($0, 1, i - 1) home
+      $0 = substr($0, i + length("<HOME>"))
+    }
+    print line $0
   }
-' "$template_dir/sbxenv.yaml" > sbxenv.yaml
+  END { if (!done) exit 1 }
+' "$template" > "$tmp" || { echo "Template has no args.sandboxName.default: $template" >&2; exit 1; }
+chmod 644 "$tmp"
+# A symlink is removed, not written through: the file it points to stays
+# untouched. mv then replaces sbxenv.yaml itself.
+[ -L sbxenv.yaml ] && rm -f sbxenv.yaml
+mv -f "$tmp" sbxenv.yaml
+trap - EXIT
 
 echo "Created sbxenv.yaml for sandbox '$name'."
 echo "Next: adjust provider and secrets, then run so-start."

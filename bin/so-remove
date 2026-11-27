@@ -3,4 +3,14 @@
 # Arguments go to `sbx env rm`, e.g. --prune-bindings.
 set -euo pipefail
 
+if [ "$(pwd -P)" = "$(cd "$HOME" && pwd -P)" ]; then
+  echo "so-remove does not run in the home directory: there is no sandbox for it." >&2
+  exit 1
+fi
+if [ ! -f sbxenv.yaml ] && [ ! -f .sbxenv.yaml ]; then
+  echo "No sbxenv.yaml found in $PWD." >&2
+  echo "There is no sandbox for this directory (see so-init)." >&2
+  exit 1
+fi
+
 exec sbx env rm "$@"

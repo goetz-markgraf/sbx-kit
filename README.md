@@ -1,4 +1,4 @@
-# sbx-kit: opencode in einer Docker Sandbox – Template
+# Sandbox Opencode (so): opencode in einer Docker Sandbox – Template
 
 Dieses Template startet den KI-Agenten [opencode](https://opencode.ai) in einer Docker Sandbox (`sbx`). Der Agent ist abgeschottet:
 
@@ -7,18 +7,35 @@ Dieses Template startet den KI-Agenten [opencode](https://opencode.ai) in einer 
 - **Historie auf dem Host.** Die opencode-Sessions liegen unter `~/.sbx-history/` und überstehen das Neuaufsetzen der Sandbox.
 - **Pro Projekt wählbar:** der Modell-Provider (jede OpenAI-kompatible API) und die Dev-Tools (Java, Node, Python, Gradle …).
 
+## Schnellstart
+
+```sh
+git clone <dieses-repository> && cd sbx-kit
+./so-setup                  # einmal pro Rechner: füllt ~ und installiert die so-Scripts
+
+cd ~/projekte/mein-projekt
+so-init                     # sbxenv.yaml anlegen, Provider und Secret anpassen
+so-start                    # Sandbox erstellen und opencode starten
+```
+
+`so-setup` ist der Einstieg. Es richtet den Host so ein, dass danach alle weiteren Befehle (`so-init`, `so-start`, `so-restart`, `so-remove`) in jedem Verzeichnis verfügbar sind. Vorher muss `sbx` installiert sein (ohne `sbx` bricht `so-setup` ab und ändert nichts) und `op` angemeldet, wenn 1Password als Secret-Quelle dient. Die einmaligen sbx-Einstellungen aus Abschnitt 2 setzt `so-setup` nach Rückfrage selbst. Die Details stehen in Abschnitt 2 (`so-setup`), 3 (`so-init`) und 4 (`so-start`, `so-restart`, `so-remove`).
+
+Das Kürzel `so` steht für `sandbox-opencode`.
+
 ## 1. So funktioniert es
 
 Die Konfiguration ist zweigeteilt:
 
 - **Zentral** im Home-Verzeichnis liegt, was für alle Projekte gleich ist.
-- **Im Projekt** liegen nur zwei Dateien: `sbxenv.yaml` und `mise.sandbox.toml`.
+- **Im Projekt** liegen nur ein oder zwei Dateien: `sbxenv.yaml` und, wenn die Sandbox Dev-Tools braucht, `mise.sandbox.toml`.
 
 ```
 ~/                                   # Home-Verzeichnis (hier: ./home/)
 ├── .sbxenv.yaml                     # zentrale Defaults für alle Projekte
-├── .config/opencode/                # opencode-Config des Hosts (Theme, Shortcuts)
+├── .config/opencode/                # optional, gehört dir: Theme und Shortcuts, wird nur gelesen
 ├── .sbx-history/                    # Historie je Sandbox (entsteht automatisch)
+├── .sbx-templates/
+│   └── sbxenv.yaml                  # Vorlage, aus der so-init die Projektdatei erzeugt
 └── .sbx-kit/                        # zentrale Kits
     ├── llm-provider/                #   Modell-Provider: Key, Netz, Modellliste
     ├── opencode-config/             #   Theme und Shortcuts vom Host
@@ -30,9 +47,18 @@ Die Konfiguration ist zweigeteilt:
 └── mise.sandbox.toml                # Dev-Tools dieses Projekts
 ```
 
-In diesem Repository simuliert `home/` das Home-Verzeichnis und `example/` ist ein (Beispiel-)Projekt.
+Dieses Repository ist so aufgebaut:
+
+```
+so-setup                             # richtet den Host ein (Abschnitt 2)
+bin/                                 # so-init, so-start, so-restart, so-remove
+home/                                # Vorlage für das Home-Verzeichnis, so-setup kopiert es nach ~
+example/                             # (Beispiel-)Projekt
+```
 
 ### Wie sbx beides zusammensetzt
+
+`so-start` benutzt `sbx env`, um die Sandbox aufzubauen.
 
 `sbx env run` führt `~/.sbxenv.yaml` und `./sbxenv.yaml` zusammen:
 
@@ -83,7 +109,9 @@ Kits haben kein Dockerfile. Alles steht im Descriptor (`<name>.yaml`).
 
 ## 2. Einmalige Einrichtung auf dem Host
 
-1. **Netzrichtlinie** auf „Locked Down“ setzen:
+Die Punkte 1 und 2 erledigt `so-setup` (Punkt 4) nach Rückfrage. Sie sind hier aufgeführt, damit man weiß, was dort passiert, und um sie von Hand zu setzen.
+
+1. **Netzrichtlinie** auf „Locked Down“ setzen. Das geht nur, solange noch keine Richtlinie gewählt ist:
    ```sh
    sbx policy init deny-all
    ```
@@ -94,22 +122,90 @@ Kits haben kein Dockerfile. Alles steht im Descriptor (`<name>.yaml`).
 
    Die Befehle in `~/.sbxenv.yaml`, die auf dem Host ausgeführt werden (`initialize`), erscheint im Plan und braucht eine Genehmigung. Mit dieser Einstellung fragt sbx nur beim ersten Start und wenn sich der Befehl ändert. Sie gilt für alle Umgebungen auf dem Host.
 3. **1Password CLI** (`op`) installieren und anmelden. Das Verzeichnis von `op` muss als absoluter Pfad im `PATH` stehen. Andere Secret-Quellen gehen auch (`command`, `value`, siehe sbx-Doku).
-4. **Zentrale Dateien ins Home-Verzeichnis kopieren:**
-   - `home/.sbxenv.yaml` nach `~/.sbxenv.yaml`
-   - `home/.sbx-kit/` nach `~/.sbx-kit/`
-   
-     `~/.sbxenv.yaml` darf kein `name` enthalten.
-   - Wer opencode schon auf dem Host nutzt, hat `~/.config/opencode` bereits. Daraus übernimmt die Sandbox nur `cli.json` (Theme, Shortcuts) und `themes/`.
+4. **`so-setup` ausführen** (siehe unten). Es setzt die Punkte 1 und 2, kopiert die zentralen Dateien ins Home-Verzeichnis und installiert die `so-*`-Scripts.
 
-Wenn sich die zentralen Kits ändern: erneut kopieren und die Sandbox neu erstellen (`sbx env rm`, `sbx env run`).
+### so-setup
+
+`so-setup` liegt im Hauptverzeichnis dieses Repositories und ist das **einzige Script, das man dort aufruft**. Alle anderen Scripts kopiert es an einen Ort im `PATH`. Es baut auf einem „nackten“ System alles auf, damit danach `so-init` im ersten Projekt funktioniert.
+
+```sh
+./so-setup
+```
+
+Es braucht keine Parameter und kann beliebig oft laufen. Es führt drei Schritte aus, die nacheinander laufen. Ohne installiertes `sbx` läuft keiner davon über den Test in Schritt 1 hinaus:
+
+**1. `sbx` prüfen und die einmaligen Einstellungen setzen**
+
+- Ist `sbx` nicht installiert, **bricht das Script hier ab** und ändert nichts: Es kopiert keine Dateien und installiert keine Scripts. Es gibt den Hinweis aus, `sbx` zu installieren ([Anleitung](https://docs.docker.com/ai/sandboxes/get-started/install/)) und `so-setup` danach erneut auszuführen.
+- Ist `sbx` vorhanden, fragt das Script bei beiden Einstellungen einzeln nach (`[y/N]`, Default Nein), weil sie für den ganzen Rechner gelten:
+  - `sbx policy init deny-all` (Netzrichtlinie „Locked Down“). sbx erlaubt das nur, solange noch keine Richtlinie gewählt ist. Scheitert der Befehl, ist entweder schon eine Richtlinie gesetzt (sie bleibt unverändert) oder sbx meldet einen anderen Fehler. Das Script unterscheidet beides nicht.
+  - `sbx settings set env.rememberHostCommands true`.
+- Zwischen den beiden Fragen zeigt das Script **immer** die aktive Netzrichtlinie (`sbx policy ls`) mit einem Hinweis, worauf zu achten ist: Der Default muss „deny“ sein, und keine Regel darf alle Hosts (`**`) erlauben. Jede Allow-Regel ist ein Host, den alle Sandboxen erreichen dürfen. So sieht man auch, ob „Locked Down“ wirklich gilt, wenn `policy init` gescheitert ist. Eine vorhandene Richtlinie ändern oder zurücksetzen: `sbx policy reset` (löscht auch alle lokalen Regeln), dann `so-setup` erneut ausführen.
+
+**2. `home/` nach `~` kopieren**
+
+| Quelle                         | Ziel                           | Behandlung                                          |
+| ------------------------------ | ------------------------------ | --------------------------------------------------- |
+| `home/.sbxenv.yaml`               | `~/.sbxenv.yaml`               | einzeln                                  |
+| `home/.sbx-templates/sbxenv.yaml` | `~/.sbx-templates/sbxenv.yaml` | einzeln                                  |
+| `home/.sbx-kit/`                  | `~/.sbx-kit/`                  | **als eine Einheit**, alle Kits zusammen |
+| –                                 | `~/.sbx-history/`              | wird nur als leeres Verzeichnis angelegt |
+
+Nur diese Einträge werden kopiert. Alles andere unter `home/` ignoriert das Script, auch neu hinzugekommene Dateien.
+
+- Gibt es das Ziel noch nicht, wird kopiert.
+- Ist es identisch, passiert nichts (`up to date`).
+- **Weicht es ab, fragt das Script für diesen Eintrag einzeln nach** (`[y/N]`, Default Nein). Bei „Nein“ bleibt die vorhandene Datei unverändert (`kept`).
+- **`~/.sbx-kit/` ist eine Einheit.** Weicht auch nur eine Datei in einem Kit ab, gibt es eine einzige Rückfrage für alle Kits zusammen. Bei „Ja“ wird `~/.sbx-kit/` **komplett gelöscht und neu kopiert**: Alle Kits werden überschrieben, eigene Änderungen darin gehen verloren, und Kits, die nur in `~/.sbx-kit/` liegen und nicht im Repository, werden **gelöscht**. Eigene zentrale Kits deshalb in `home/.sbx-kit/` des Repositories pflegen.
+- Die Dateirechte kommen nicht aus dem Repository. Das Script setzt sie selbst: Verzeichnisse `755`, Dateien `644`, Scripts `755`.
+- `~/.config/opencode` fasst `so-setup` nie an: Es legt dort nichts an und überschreibt nichts. Wer opencode auf dem Host nutzt, dessen `cli.json` (Theme, Shortcuts) und `themes/` übernimmt die Sandbox beim Erstellen und bei jedem Start als Kopie. Gibt es den Ordner nicht, startet opencode in der Sandbox mit seinen Standardeinstellungen.
+- `~/.sbxenv.yaml` darf kein `name` enthalten.
+
+**3. Die Scripts aus `bin/` installieren**
+
+Das Script installiert nur `so-init`, `so-start`, `so-restart` und `so-remove`. Andere Dateien in `bin/` ignoriert es. Als Ziel kommen nur diese Verzeichnisse in Frage, in dieser Reihenfolge:
+
+1. `~/bin`, wenn es existiert, schreibbar ist und im `PATH` steht.
+2. `~/.local/bin`, unter denselben Bedingungen.
+3. Passt keines, sagt es das und fragt, ob es `~/bin` anlegen (oder das vorhandene nutzen) soll. Bei „Ja“ erscheint danach der Hinweis, dass dieses Verzeichnis in den `PATH` aufgenommen werden muss, etwa mit
+   ```sh
+   export PATH="$HOME/bin:$PATH"
+   ```
+   in `~/.zshrc` bzw. `~/.bashrc` (je nach Shell). Danach ein neues Terminal öffnen. Bei „Nein“ installiert das Script keine Scripts. Dann `bin/*` selbst in ein Verzeichnis im `PATH` kopieren.
+
+Auch hier wird jedes Script einzeln verglichen und bei Abweichung einzeln nachgefragt.
+
+Zum Schluss warnt `so-setup`, wenn `op` nicht im `PATH` steht. Die 1Password CLI (Punkt 3 oben) installiert und konfiguriert es nicht.
+
+**Nach Änderungen am Repository:** `./so-setup` erneut ausführen. Geänderte Kits und Scripts werden nach Rückfrage übernommen. Bestehende Sandboxen behalten ihre alten Kits, bis man sie neu erstellt (`so-restart`).
 
 ## 3. Ein neues Projekt einrichten
 
-Kopiere `example/sbxenv.yaml` und `example/mise.sandbox.toml` ins Projektverzeichnis und ändere:
+Im Projektverzeichnis:
+
+```sh
+cd ~/projekte/mein-projekt
+so-init
+```
+
+### so-init
+
+`so-init` legt im aktuellen Verzeichnis die Projektdatei `sbxenv.yaml` an.
+
+1. Im Home-Verzeichnis selbst bricht es ab: `~` darf nie der Workspace einer Sandbox werden.
+2. Es fragt nach dem **Namen der Sandbox**. Der Default ist der Name des aktuellen Verzeichnisses, auf die erlaubten Zeichen gekürzt: Andere Zeichen und doppelte `.`, `_`, `-` werden zu einem `-`, z. B. `my__app (2)` → `my-app-2`. ENTER übernimmt ihn. Eine ungültige Eingabe bricht ab.
+3. Existiert schon eine `sbxenv.yaml`, fragt es vor dem Überschreiben nach (Default Nein). Ist sie ein Symlink, ersetzt es nur den Link, nie die Datei, auf die er zeigt.
+4. Es erzeugt `sbxenv.yaml` aus der Vorlage `~/.sbx-templates/sbxenv.yaml`. Dabei setzt es den Namen in Anführungszeichen als `args.sandboxName.default` (damit Namen wie `true` oder `123` Text bleiben) und ersetzt jedes `<HOME>` der Vorlage durch dein Home-Verzeichnis (`$HOME`), denn sbx löst `~` in Kit-Pfaden nicht auf. Fehlt die Vorlage oder hat sie kein `args.sandboxName.default`, bricht es ab. Dann zuerst `./so-setup` ausführen.
+
+Die Vorlage entspricht `example/sbxenv.yaml`, hat aber `<HOME>` statt eines festen Home-Verzeichnisses in den Kit-Pfaden. Sie enthält Requesty als Provider. Für andere Provider oder eigene Defaults die Vorlage in `~/.sbx-templates/` anpassen. Beim nächsten `so-setup` fragt das Script dann vor dem Überschreiben nach. Alternativ nach `so-init` die erzeugte `sbxenv.yaml` ändern.
+
+`so-init` legt **keine** `mise.sandbox.toml` an. Die Sandbox startet auch ohne. Für Dev-Tools `example/mise.sandbox.toml` ins Projekt kopieren und anpassen.
+
+Danach die erzeugte `sbxenv.yaml` anpassen:
 
 ### Checkliste
 
-- [ ] **Sandbox-Name:** `args.sandboxName.default`. Er muss eindeutig sein und bestimmt Sandbox und Historie-Ordner. Erlaubt sind Buchstaben, Ziffern und `.`, `_`, `-`.
+- [ ] **Sandbox-Name:** `args.sandboxName.default`. `so-init` hat ihn gesetzt. Er muss eindeutig sein und bestimmt Sandbox und Historie-Ordner. Erlaubt sind Buchstaben, Ziffern und `.`, `_`, `-`.
 - [ ] **Provider:** `providerId`, `providerHost` und optional `providerName` und `providerBasePath` (siehe unten).
 - [ ] **Secret und Binding:** Der Schlüssel muss gleich `providerId` sein, die Domain gleich `providerHost`. Über diesen Host wird das Secret in den Call injiziert und ist nicht innerhalb der Sandbox sichtbar.
 - [ ] **Dev-Tools:** `mise.sandbox.toml`. Hier unter `[tools]` eine Liste der Anwendungen aufnehmen, die in der Sandbox verfügbar sein sollen.
@@ -165,18 +261,56 @@ Map-Schlüssel in `secrets` und `bindings` können keine Args verwenden. Deshalb
 
 ## 4. Im Alltag benutzen
 
-Alle Befehle im Projektverzeichnis, ohne Pfad-Argument:
+Alle Befehle im Projektverzeichnis, ohne Pfad-Argument. Die `so-*`-Scripts sind dünne Hüllen um `sbx env`:
 
+| Aufgabe                                                      | Script                    | Entspricht                                    |
+| ------------------------------------------------------------ | ------------------------- | --------------------------------------------- |
+| Verzeichnis für eine Sandbox einrichten                      | `so-init`                 | – (siehe Abschnitt 3)                         |
+| Sandbox erstellen und opencode starten, oder wieder anhängen | `so-start`                | `sbx env run`                                 |
+| opencode mit Parametern starten                              | `so-start <parameter>`    | `sbx env run -- "exec opencode <parameter>"`  |
+| Sandbox entfernen und neu starten                            | `so-restart`              | `sbx env rm`, dann `so-start`                 |
+| Sandbox entfernen (Historie bleibt)                          | `so-remove`               | `sbx env rm`                                  |
 
-| Aufgabe                                                      | Befehl                     |
-| ------------------------------------------------------------ | -------------------------- |
-| Sandbox erstellen und opencode starten, oder wieder anhängen | `sbx env run`              |
-| Shell statt opencode                                         | `sbx env run -- bash`      |
-| Einen Befehl in der Sandbox ausführen                        | `sbx env exec -- <befehl>` |
-| Sandbox entfernen (Historie bleibt)                          | `sbx env rm`               |
+Für alles andere direkt `sbx` benutzen:
 
+| Aufgabe                              | Befehl                     |
+| ------------------------------------ | -------------------------- |
+| Shell statt opencode                 | `sbx env run -- bash`      |
+| Einen Befehl in der Sandbox ausführen | `sbx env exec -- <befehl>` |
 
-Beim ersten Erstellen:
+### so-start
+
+```sh
+so-start                       # opencode starten (Sandbox wird bei Bedarf erstellt)
+so-start --continue            # opencode mit Parametern, hier: letzte Session fortsetzen
+so-start -s <session-id>       # eine bestimmte Session öffnen
+```
+
+- Ohne Parameter läuft `sbx env run`. Es startet `opencode` mit dem zentralen Standard und hängt sich an eine laufende Sandbox an.
+- Mit Parametern startet `so-start` `opencode` mit genau diesen Parametern (`sbx env run -- "exec opencode …"`). Anführungszeichen und Leerzeichen in den Parametern bleiben erhalten.
+- Es startet **immer nur opencode**. Wer etwas anderes in der Sandbox ausführen will, ruft `sbx env run -- <befehl>` direkt auf, z. B. `sbx env run -- bash`.
+- Steht im aktuellen Verzeichnis weder `sbxenv.yaml` noch `.sbxenv.yaml`, bricht das Script mit dem Hinweis ab, zuerst `so-init` auszuführen.
+- Im Home-Verzeichnis selbst bricht es immer ab. Dort liegt `~/.sbxenv.yaml`, und `~` würde sonst samt `~/.ssh` und der zentralen Konfiguration zum beschreibbaren Workspace. Diese Prüfung haben alle `so-*`-Scripts.
+
+### so-restart
+
+```sh
+so-restart                     # Sandbox entfernen und neu erstellen
+so-restart --continue          # danach opencode mit Parametern starten
+```
+
+Das ist der übliche Weg nach einer Konfigurationsänderung, die erst bei einer neuen Sandbox wirkt (Kits, Secrets, Bindings, Mounts, `mise.sandbox.toml`, siehe „Was wann wirkt“). Es entfernt die Sandbox mit `sbx env rm` und startet sie über `so-start` neu. Parameter gehen wie bei `so-start` an opencode. Die Historie bleibt erhalten. Wie `so-start` bricht es ab, wenn im aktuellen Verzeichnis weder `sbxenv.yaml` noch `.sbxenv.yaml` steht, und im Home-Verzeichnis. Scheitert `sbx env rm`, etwa weil es noch keine Sandbox gibt, startet es nichts. Dann `so-start` benutzen.
+
+### so-remove
+
+```sh
+so-remove                      # Sandbox entfernen
+so-remove --prune-bindings     # zusätzlich die host-globalen Bindings löschen
+```
+
+Entfernt die Sandbox des aktuellen Verzeichnisses mit `sbx env rm`. Zusätzliche Optionen gehen unverändert an `sbx env rm`. Die Historie unter `~/.sbx-history/<name>/` bleibt bestehen. Ohne `sbxenv.yaml` oder `.sbxenv.yaml` im aktuellen Verzeichnis und im Home-Verzeichnis bricht es ab. Zu `--prune-bindings` siehe unten.
+
+### Beim ersten Erstellen
 
 - sbx zeigt den **Plan** (Kits, Mounts, Host-Befehl, Secrets). Prüfe ihn und bestätige.
 - Es kommt die Abfrage **„This kit wants to use these credentials“**. Sie stammt von `sbx/opencode-mixin`, nicht von unseren Kits. Wir nutzen keinen der genannten Dienste, deshalb ist **3 (No)** richtig (Default, ENTER). „Approve all“ ist host-global und wird nicht empfohlen: Ein später gesetzter Key, etwa `sbx secret set github`, würde dann auch in dieser Sandbox injiziert.
@@ -188,12 +322,12 @@ Beim ersten Erstellen:
 | Änderung                                                                                 | Wirkt                                  |
 | ---------------------------------------------------------------------------------------- | -------------------------------------- |
 | `env:`, `entrypoint`, `cmd`                                                              | beim nächsten `run`                    |
-| `kits`, `secrets`, `bindings`, Kit-Args, Mounts, `mise.sandbox.toml`, Änderungen an Kits | erst nach `sbx env rm` und neuem `run` |
+| `kits`, `secrets`, `bindings`, Kit-Args, Mounts, `mise.sandbox.toml`, Änderungen an Kits | erst nach `so-restart` (`sbx env rm` und neuem `run`) |
 
 
-Schlägt das Erstellen fehl, können Teile zurück bleiben (Secrets, halbe Sandbox). Dann immer zuerst `sbx env rm`.
+Schlägt das Erstellen fehl, können Teile zurück bleiben (Secrets, halbe Sandbox). Dann immer zuerst `so-remove` (`sbx env rm`).
 
-Was `sbx env rm` laut sbx-Doku entfernt: die Sandbox und ihre Secrets (Secrets gelten pro Sandbox). Die Bindings sind host-global und bleiben stehen. Nur `sbx env rm --prune-bindings` löscht sie, und das betrifft auch andere Sandboxen mit denselben Bindings.
+Was `sbx env rm` (also auch `so-remove` und `so-restart`) laut sbx-Doku entfernt: die Sandbox und ihre Secrets (Secrets gelten pro Sandbox). Die Bindings sind host-global und bleiben stehen. Nur `sbx env rm --prune-bindings` (oder `so-remove --prune-bindings`) löscht sie, und das betrifft auch andere Sandboxen mit denselben Bindings.
 
 ## 5. Optional: Requesty-Budget-Plugin
 
@@ -491,8 +625,8 @@ Auf dem Host:
 
 Typische Fälle:
 
-- **Das Erstellen bricht ab:** Die Ausgabe nennt den Hook und seine Meldung. Danach `sbx env rm`, Ursache beheben, `sbx env run`.
-- **Eine Kit-Änderung wirkt nicht:** Die Sandbox muss neu erstellt werden. Außerdem prüfen, ob die Änderung wirklich in `~/.sbx-kit` angekommen ist. Die Kopie im Repository wird nicht automatisch verwendet.
+- **Das Erstellen bricht ab:** Die Ausgabe nennt den Hook und seine Meldung. Danach `so-remove`, Ursache beheben, `so-start`.
+- **Eine Kit-Änderung wirkt nicht:** Die Sandbox muss neu erstellt werden. Außerdem prüfen, ob die Änderung wirklich in `~/.sbx-kit` angekommen ist. Die Kopie im Repository wird nicht automatisch verwendet: `./so-setup` ausführen, dann `so-restart`.
 - **Der Provider zeigt keine Modelle:** `sbx policy log` auf gesperrte Hosts prüfen, und ob `providerId`, `providerHost` und die Schlüssel in `secrets` und `bindings` zusammenpassen.
 - **Das Plugin fehlt in der TUI:** `opencode plugin list` und `cli.json` prüfen. Ohne Anzeige trotz Eintrag: Hat der Key die Berechtigung `manage`?
 
@@ -518,6 +652,7 @@ Mit `sbx` auf macOS getestet (Sandbox erstellt, opencode gestartet, Requesty-Mod
 
 ## Noch nicht geprüft
 
+- Die Scripts `so-setup`, `so-init`, `so-start`, `so-restart` und `so-remove`: Sie sind nur mit einem Ersatz-`sbx` und simulierten Home-Verzeichnissen unter Linux getestet, nicht mit dem echten `sbx` und nicht auf macOS. Sie nutzen nur bash-3.2-kompatible Mittel und kein `readlink -f`, damit sie auch mit der bash von macOS laufen. Offen ist vor allem, ob `sbx env run -- "exec opencode <parameter>"` den String unverändert an `bash -lc` übergibt, und wie die Ausgabe von `sbx policy ls` genau aussieht.
 - Relative Projekt-Kits (`./.sbx/...`) und Git- oder OCI-Quellen in der Projektdatei, auch `kit.allowedSources`.
 - Das Veröffentlichen (Abschnitt 6): `git+https://…#ref=…&dir=…` als Kit-Quelle, und `docker buildx build` für ein Kit ohne Dockerfile. Laut Spezifikation darf ein Mixin ohne Recipe ein reines Descriptor-Image ergeben. Ein privates Git-Repository und `git+ssh` sind nicht getestet.
 - Das Zusammenführen von `secrets`, `bindings` und `env`, wenn sie in beiden Dateien stehen. Die Tabelle in Abschnitt 1 folgt der sbx-Doku (verschachtelte Maps werden je Schlüssel zusammengeführt). Im Beispiel stehen `secrets` und `bindings` nur im Projekt.

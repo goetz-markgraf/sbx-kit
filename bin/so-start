@@ -5,6 +5,11 @@
 # For anything else use `sbx env run -- <command>` directly.
 set -euo pipefail
 
+# The workspace is the current directory; the home directory must never be one.
+if [ "$(pwd -P)" = "$(cd "$HOME" && pwd -P)" ]; then
+  echo "so-start does not run in the home directory: it would become the workspace." >&2
+  exit 1
+fi
 if [ ! -f sbxenv.yaml ] && [ ! -f .sbxenv.yaml ]; then
   echo "No sbxenv.yaml found in $PWD." >&2
   echo "Run so-init to set up this directory for a sandbox first." >&2
